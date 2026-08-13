@@ -327,6 +327,16 @@
           "by": "lacite",
           "at": "2026-08-13T13:48:53+00:00",
           "revision": 1
+        },
+        "NA": {
+          "value": 135,
+          "components": null,
+          "unit": "mmol/L",
+          "note": "",
+          "critical": false,
+          "by": "lacite",
+          "at": "2026-08-13T13:49:05+00:00",
+          "revision": 1
         }
       },
       "transport": {
@@ -491,11 +501,20 @@
           "detail": {
             "test": "Triglycerides"
           }
+        },
+        {
+          "at": "2026-08-13T13:49:05+00:00",
+          "action": "RESULT_SET",
+          "actor": "lacite",
+          "branch": "LACITE",
+          "detail": {
+            "test": "Sodium (Na⁺)"
+          }
         }
       ],
       "created_at": "2026-08-13T13:40:07+00:00",
       "created_by": "diamond",
-      "updated_at": "2026-08-13T13:48:53+00:00"
+      "updated_at": "2026-08-13T13:49:05+00:00"
     }
   }
 }
