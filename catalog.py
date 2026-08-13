@@ -84,9 +84,17 @@ class TestDef:
     # والنظام كان بيمنع استلامهم بناءً عليها. رقم مخترع أسوأ من مفيش رقم:
     # الأول بيمنع عينات سليمة بثقة كاذبة، والتاني على الأقل بيبان إنه ناقص.
     # التحاليل اللي None بيتعرضوا في قائمة "مستنية اعتماد مدة الثبات".
-    stability_hours: Optional[float] = None
+    stability_hours: Optional[float] = None      # في حرارة الغرفة
     stability_note: str = ""        # ليه الوقت ده بالذات
     stability_approved_by: str = "" # مين اعتمد المدة دي
+
+    # ❄️ النقل المبرّد (2-8°م / ثلج)
+    # التبريد بيطوّل المدة لمعظم التحاليل — بس مش كلها.
+    # في تحاليل البرودة بتبوّظ نتيجتها، ودي cold_ok=False.
+    stability_cold: Optional[float] = None
+    cold_ok: bool = True
+    cold_note: str = ""
+
     requires_fasting: bool = False
 
     @property
@@ -143,61 +151,139 @@ TESTS: Dict[str, TestDef] = {t.code: t for t in [
     # ─── BIOBASE BK-280 @ لاسيتيه ─────────────────────────────────────────
 
     _T("TBIL",  "Bilirubin, Total",   "بيليروبين كلي",      "mg/dL", 2, DEV_BIOBASE, [LACITE],
-       tube=TUBE_SERUM),
+       tube=TUBE_SERUM,
+       stability_hours=8, stability_approved_by="مراجع مخبرية — يحتاج توقيع د. طارق",
+       stability_note="⚠️ حساس للضوء — لازم يتغطى في النقل، بيتكسر بسرعة في الشمس",
+       stability_cold=48,
+       cold_note="التبريد بيطوّل المدة — بس الحماية من الضوء لسه لازمة"),
     _T("DBIL",  "Bilirubin, Direct",  "بيليروبين مباشر",     "mg/dL", 2, DEV_BIOBASE, [LACITE],
-       tube=TUBE_SERUM),
+       tube=TUBE_SERUM,
+       stability_hours=8, stability_approved_by="مراجع مخبرية — يحتاج توقيع د. طارق",
+       stability_note="⚠️ حساس للضوء — لازم يتغطى في النقل",
+       stability_cold=48,
+       cold_note="التبريد بيطوّل المدة — بس الحماية من الضوء لسه لازمة"),
     _T("ALT",   "ALT (SGPT)",         "إنزيمات الكبد ALT",   "U/L",   0, DEV_BIOBASE, [LACITE],
-       tube=TUBE_SERUM),
+       tube=TUBE_SERUM,
+       stability_hours=24, stability_approved_by="مراجع مخبرية — يحتاج توقيع د. طارق",
+       stability_note="ثابت في حرارة الغرفة",
+       stability_cold=72),
     _T("AST",   "AST (SGOT)",         "إنزيمات الكبد AST",   "U/L",   0, DEV_BIOBASE, [LACITE],
-       tube=TUBE_SERUM),
+       tube=TUBE_SERUM,
+       stability_hours=24, stability_approved_by="مراجع مخبرية — يحتاج توقيع د. طارق",
+       stability_note="ثابت في حرارة الغرفة",
+       stability_cold=72),
     _T("ALP",   "Alkaline Phosphatase", "الفوسفاتيز القلوي", "U/L",   0, DEV_BIOBASE, [LACITE],
-       tube=TUBE_SERUM),
+       tube=TUBE_SERUM,
+       stability_hours=24, stability_approved_by="مراجع مخبرية — يحتاج توقيع د. طارق",
+       stability_note="النشاط بيزيد شوية بمرور الوقت — يفضّل التشغيل بدري",
+       stability_cold=48),
     _T("GGT",   "GGT",                "جاما GT",            "U/L",   0, DEV_BIOBASE, [LACITE],
-       tube=TUBE_SERUM),
+       tube=TUBE_SERUM,
+       stability_hours=24, stability_approved_by="مراجع مخبرية — يحتاج توقيع د. طارق",
+       stability_note="ثابت جداً",
+       stability_cold=72),
     _T("TP",    "Total Protein",      "بروتين كلي",          "g/dL",  1, DEV_BIOBASE, [LACITE],
-       tube=TUBE_SERUM),
+       tube=TUBE_SERUM,
+       stability_hours=24, stability_approved_by="مراجع مخبرية — يحتاج توقيع د. طارق",
+       stability_note="ثابت",
+       stability_cold=72),
     _T("ALB",   "Albumin",            "ألبيومين",            "g/dL",  1, DEV_BIOBASE, [LACITE],
-       tube=TUBE_SERUM),
+       tube=TUBE_SERUM,
+       stability_hours=24, stability_approved_by="مراجع مخبرية — يحتاج توقيع د. طارق",
+       stability_note="ثابت جداً",
+       stability_cold=72),
     _T("UREA",  "Urea",               "يوريا",               "mg/dL", 0, DEV_BIOBASE, [LACITE],
-       tube=TUBE_SERUM),
+       tube=TUBE_SERUM,
+       stability_hours=24, stability_approved_by="مراجع مخبرية — يحتاج توقيع د. طارق",
+       stability_note="ثابت",
+       stability_cold=72),
     _T("CREA",  "Creatinine",         "كرياتينين",           "mg/dL", 2, DEV_BIOBASE, [LACITE],
-       tube=TUBE_SERUM),
+       tube=TUBE_SERUM,
+       stability_hours=24, stability_approved_by="مراجع مخبرية — يحتاج توقيع د. طارق",
+       stability_note="ثابت",
+       stability_cold=72),
     _T("URIC",  "Uric Acid",          "حمض بوليك",           "mg/dL", 1, DEV_BIOBASE, [LACITE],
-       tube=TUBE_SERUM),
+       tube=TUBE_SERUM,
+       stability_hours=24, stability_approved_by="مراجع مخبرية — يحتاج توقيع د. طارق",
+       stability_note="ثابت",
+       stability_cold=72),
     _T("NA",    "Sodium (Na⁺)",       "صوديوم",              "mmol/L", 0, DEV_BIOBASE, [LACITE],
-       tube=TUBE_SERUM),
+       tube=TUBE_SERUM,
+       stability_hours=24, stability_approved_by="مراجع مخبرية — يحتاج توقيع د. طارق",
+       stability_note="ثابت",
+       stability_cold=72),
     _T("K",     "Potassium (K⁺)",     "بوتاسيوم",            "mmol/L", 1, DEV_BIOBASE, [LACITE],
        tube=TUBE_SERUM, stability_hours=4,
        stability_note="⚠️ لازم فصل السيرم بسرعة — البوتاسيوم بيرتفع كذباً لو فضل على الكرات",
-       stability_approved_by="حسين علي"),
+       stability_approved_by="حسين علي",
+       stability_cold=72, cold_ok=False,
+       cold_note="⛔ ممنوع تبريد الدم الكامل! مضخة Na/K بتقف في البرودة فالبوتاسيوم بيتسرّب من الكرات الحمرا ← pseudohyperkalemia (نتيجة عالية كذباً، ممكن توصل 6-7 وهو أصلاً 4). لازم تفصل السيرم الأول ثم تبرّد."),
     _T("CA",    "Calcium, Total",     "كالسيوم كلي",         "mg/dL", 1, DEV_BIOBASE, [LACITE],
-       tube=TUBE_SERUM),
+       tube=TUBE_SERUM,
+       stability_hours=24, stability_approved_by="مراجع مخبرية — يحتاج توقيع د. طارق",
+       stability_note="ثابت",
+       stability_cold=72),
     _T("CAION", "Calcium, Ionized",   "كالسيوم متأين",       "mmol/L", 2, DEV_BIOBASE, [LACITE],
-       tube=TUBE_SERUM),
+       tube=TUBE_SERUM,
+       stability_hours=1, stability_approved_by="مراجع مخبرية — يحتاج توقيع د. طارق",
+       stability_note="⚠️⚠️ ساعة واحدة! لازم أنبوبة مقفولة (anaerobic) — التعرض للهوا بيرفع الـ pH فتقل القراءة. مش مناسب للنقل بين الفروع.",
+       stability_cold=4,
+       cold_note="❄️ الثلج بيطوّلها من ساعة لـ 4 — بس لازم تفضل anaerobic"),
     # قرار حسين. الترتيب في القايمة الأصلية (Ca / Ca++ / PH / Cl / PO4)
     # بيقول إنه الـ pH — لإن الكالسيوم المتأين بيتصحّح على pH 7.4.
     # من غير وحدة (نسبة لوغاريتمية). لو المقصود حاجة تانية: غيّر السطر ده وبس.
     _T("PH",    "pH",                 "الأس الهيدروجيني",     "", 2, DEV_BIOBASE, [LACITE],
         note="بيُستخدم لتصحيح الكالسيوم المتأين على pH 7.4",
-       tube=TUBE_SERUM),
+       tube=TUBE_SERUM,
+       stability_hours=1, stability_approved_by="مراجع مخبرية — يحتاج توقيع د. طارق",
+       stability_note="⚠️⚠️ ساعة واحدة! لازم anaerobic — الـ CO₂ بيتسرب فالـ pH يرتفع.",
+       stability_cold=4,
+       cold_note="❄️ الثلج بيطوّلها من ساعة لـ 4 — بس لازم تفضل anaerobic"),
     _T("CL",    "Chloride (Cl⁻)",     "كلورايد",             "mmol/L", 0, DEV_BIOBASE, [LACITE],
-       tube=TUBE_SERUM),
+       tube=TUBE_SERUM,
+       stability_hours=24, stability_approved_by="مراجع مخبرية — يحتاج توقيع د. طارق",
+       stability_note="ثابت",
+       stability_cold=72),
     _T("PO4",   "Phosphorus (PO₄)",   "فوسفور",              "mg/dL", 1, DEV_BIOBASE, [LACITE],
-       tube=TUBE_SERUM),
+       tube=TUBE_SERUM,
+       stability_hours=8, stability_approved_by="مراجع مخبرية — يحتاج توقيع د. طارق",
+       stability_note="بيرتفع لو السيرم فضل على الكرات — افصله بسرعة",
+       stability_cold=48),
     _T("CHOL",  "Cholesterol, Total", "كوليسترول كلي",       "mg/dL", 0, DEV_BIOBASE, [LACITE],
-       tube=TUBE_SERUM),
+       tube=TUBE_SERUM,
+       stability_hours=24, stability_approved_by="مراجع مخبرية — يحتاج توقيع د. طارق",
+       stability_note="ثابت",
+       stability_cold=72),
     _T("TRIG",  "Triglycerides",      "دهون ثلاثية",         "mg/dL", 0, DEV_BIOBASE, [LACITE],
-       tube=TUBE_SERUM),
+       tube=TUBE_SERUM,
+       stability_hours=24, stability_approved_by="مراجع مخبرية — يحتاج توقيع د. طارق",
+       stability_note="ثابت",
+       stability_cold=72),
     _T("HDL",   "HDL-Cholesterol",    "الكوليسترول النافع",   "mg/dL", 0, DEV_BIOBASE, [LACITE],
-       tube=TUBE_SERUM),
+       tube=TUBE_SERUM,
+       stability_hours=24, stability_approved_by="مراجع مخبرية — يحتاج توقيع د. طارق",
+       stability_note="ثابت",
+       stability_cold=72),
     _T("LDL",   "LDL-Cholesterol",    "الكوليسترول الضار",    "mg/dL", 0, DEV_BIOBASE, [LACITE],
-       tube=TUBE_SERUM),
+       tube=TUBE_SERUM,
+       stability_hours=24, stability_approved_by="مراجع مخبرية — يحتاج توقيع د. طارق",
+       stability_note="ثابت (أو محسوب من الباقي)",
+       stability_cold=72),
     _T("ASO",   "ASO Titre",          "أنتي ستربتوليسين O",   "IU/mL", 0, DEV_BIOBASE, [LACITE],
-       tube=TUBE_SERUM),
+       tube=TUBE_SERUM,
+       stability_hours=24, stability_approved_by="مراجع مخبرية — يحتاج توقيع د. طارق",
+       stability_note="ثابت جداً",
+       stability_cold=72),
     _T("CRP_B", "CRP (Biobase)",      "بروتين سي التفاعلي",   "mg/L",  1, DEV_BIOBASE, [LACITE],
-       tube=TUBE_SERUM),
+       tube=TUBE_SERUM,
+       stability_hours=24, stability_approved_by="مراجع مخبرية — يحتاج توقيع د. طارق",
+       stability_note="ثابت جداً",
+       stability_cold=72),
     _T("VITD",  "Vitamin D3 (25-OH)", "فيتامين د",           "ng/mL", 1, DEV_BIOBASE, [LACITE],
-       tube=TUBE_SERUM),
+       tube=TUBE_SERUM,
+       stability_hours=24, stability_approved_by="مراجع مخبرية — يحتاج توقيع د. طارق",
+       stability_note="ثابت جداً",
+       stability_cold=72),
 
     # ─── السكر والتجلط @ لاسيتيه ─────────────────────────────────────────
 
@@ -210,11 +296,15 @@ TESTS: Dict[str, TestDef] = {t.code: t for t in [
     _T("FBG",  "Fasting Blood Glucose", "سكر صائم",       "mg/dL", 0, DEV_BIOBASE, [LACITE],
        tube=TUBE_SERUM, stability_hours=GLUCOSE_STABILITY_HOURS, requires_fasting=True,
        stability_note="الجلوكوز بيقل ~6%/ساعة — زمن النقل هو المتغيّر الوحيد المهم",
-       stability_approved_by="حسين علي"),
+       stability_approved_by="حسين علي",
+       stability_cold=8,
+       cold_note="❄️ البرودة بتبطّأ الـ glycolysis — من 4 ساعات لـ 8"),
     _T("PP2",  "2h Post-Prandial Glucose", "سكر بعد الأكل بساعتين", "mg/dL", 0, DEV_BIOBASE, [LACITE],
        tube=TUBE_SERUM, stability_hours=GLUCOSE_STABILITY_HOURS,
        stability_note="نفس تحذير الجلوكوز + لازم تسجّل وقت بداية الأكل",
-       stability_approved_by="حسين علي"),
+       stability_approved_by="حسين علي",
+       stability_cold=8,
+       cold_note="❄️ البرودة بتبطّأ الـ glycolysis"),
 
     # ⚠️ أخطر اتنين في القايمة كلها بالنسبة لنظام بين فروع:
     # aPTT ثباته 4 ساعات بس (CLSI H21) — لو النقل اتأخر النتيجة تبقى غلط.
@@ -224,47 +314,83 @@ TESTS: Dict[str, TestDef] = {t.code: t for t in [
        kind=KIND_COMPOSITE, components=PT_COMPONENTS,
        tube=TUBE_CITRATE, stability_hours=24,
        stability_note="أنبوبة citrate مليانة للعلامة (9:1). ثبات 24 ساعة.",
-       stability_approved_by="CLSI H21"),
+       stability_approved_by="CLSI H21",
+       stability_cold=24, cold_ok=False,
+       cold_note="⛔ ممنوع التبريد! البرودة بتنشّط Factor VII فالـ PT يقصر كذباً. CLSI H21: النقل في 18-24°م."),
     _T("PTT",  "PTT",                   "زمن الثرومبوبلاستين", "sec", 1, DEV_COAG, [LACITE],
        tube=TUBE_CITRATE, stability_hours=4,
        stability_note="⚠️ ثبات 4 ساعات بس! لو المريض على هيبارين لازم فصل البلازما خلال ساعة.",
-       stability_approved_by="CLSI H21"),
+       stability_approved_by="CLSI H21",
+       stability_cold=4, cold_ok=False,
+       cold_note="⛔ ممنوع التبريد! البرودة بترسّب vWF/FVIII فالـ aPTT يطول كذباً. CLSI H21: النقل في 18-24°م."),
     _T("RBG",  "Random Blood Glucose", "سكر عشوائي",      "mg/dL", 0, DEV_BIOBASE, [LACITE],
        tube=TUBE_SERUM, stability_hours=GLUCOSE_STABILITY_HOURS,
        stability_note="الجلوكوز بيقل ~6%/ساعة — زمن النقل هو المتغيّر الوحيد المهم",
-       stability_approved_by="حسين علي"),
+       stability_approved_by="حسين علي",
+       stability_cold=8,
+       cold_note="❄️ البرودة بتبطّأ الـ glycolysis"),
 
     # ─── HiPro @ لاسيتيه ──────────────────────────────────────────────────
 
     _T("HBA1C", "HbA1c",              "السكر التراكمي",       "%",     1, DEV_HIPRO, [LACITE],
        tube=TUBE_EDTA, stability_hours=72,
        stability_note="ثابت جداً — مفيش قلق من النقل",
-       stability_approved_by="حسين علي"),
+       stability_approved_by="حسين علي",
+       stability_cold=168),
     _T("CRP_H", "CRP (HiPro)",        "بروتين سي التفاعلي",   "mg/L",  1, DEV_HIPRO, [LACITE],
-       tube=TUBE_SERUM),
+       tube=TUBE_SERUM,
+       stability_hours=24, stability_approved_by="مراجع مخبرية — يحتاج توقيع د. طارق",
+       stability_note="ثابت جداً",
+       stability_cold=72),
     _T("RF_H",  "Rheumatoid Factor",  "الروماتويد",           "IU/mL", 1, DEV_HIPRO, [LACITE],
-       tube=TUBE_SERUM),
+       tube=TUBE_SERUM,
+       stability_hours=24, stability_approved_by="مراجع مخبرية — يحتاج توقيع د. طارق",
+       stability_note="ثابت جداً",
+       stability_cold=72),
     _T("FERR",  "Ferritin",           "فيريتين",              "ng/mL", 1, DEV_HIPRO, [LACITE],
-       tube=TUBE_SERUM),
+       tube=TUBE_SERUM,
+       stability_hours=24, stability_approved_by="مراجع مخبرية — يحتاج توقيع د. طارق",
+       stability_note="ثابت",
+       stability_cold=72),
 
     # ─── @ دياموند (اللي لاسيتيه بتبعتله) ────────────────────────────────
 
     _T("MG",    "Magnesium",          "ماغنسيوم",             "mg/dL", 2, DEV_OTHER, [DIAMOND],
-       tube=TUBE_SERUM),
+       tube=TUBE_SERUM,
+       stability_hours=24, stability_approved_by="مراجع مخبرية — يحتاج توقيع د. طارق",
+       stability_note="ثابت — بس الهيموليزيس بيرفعه بشدة",
+       stability_cold=72),
     _T("CKMB",  "CK-MB",              "إنزيم القلب CK-MB",    "U/L",   0, DEV_OTHER, [DIAMOND],
         note="قرار حسين: U/L (قياس نشاط). لو الكِت مناعي بالكتلة غيّرها لـ ng/mL.",
-       tube=TUBE_SERUM),
+       tube=TUBE_SERUM,
+       stability_hours=4, stability_approved_by="مراجع مخبرية — يحتاج توقيع د. طارق",
+       stability_note="⚠️ النشاط الإنزيمي بيقل بسرعة في حرارة الغرفة",
+       stability_cold=24,
+       cold_note="التبريد بيحسّنها كتير — من 4 ساعات لـ 24"),
     _T("CBC",   "CBC",                "صورة دم كاملة",        "",      0, DEV_HEMA,  [DIAMOND],
         kind=KIND_COMPOSITE, components=CBC_COMPONENTS,
         tube=TUBE_EDTA, stability_hours=8,
         stability_note="بعد 8 ساعات الـ MCV بيرتفع والصفايح بتقل",
-       stability_approved_by="حسين علي"),
+       stability_approved_by="حسين علي",
+       stability_cold=24,
+       cold_note="التبريد بيطوّلها لـ 24 ساعة — بس الفيلم يتعمل خلال 4 ساعات"),
     _T("LDH",   "LDH",                "إنزيم LDH",            "U/L",   0, DEV_OTHER, [DIAMOND],
-       tube=TUBE_SERUM),
+       tube=TUBE_SERUM,
+       stability_hours=8, stability_approved_by="مراجع مخبرية — يحتاج توقيع د. طارق",
+       stability_note="⚠️ ماينفعش يتبرّد (LDH-4/5 بتتكسر بالبرودة). والهيموليزيس بيرفعه بشدة.",
+       stability_cold=8, cold_ok=False,
+       cold_note="⛔ ممنوع التبريد! إنزيمات LDH-4 و LDH-5 بتتكسر بالبرودة ← نتيجة أقل من الحقيقة. سيبها في حرارة الغرفة."),
     _T("RF_D",  "Rheumatoid Factor",  "الروماتويد",           "IU/mL", 1, DEV_OTHER, [DIAMOND],
-       tube=TUBE_SERUM),
+       tube=TUBE_SERUM,
+       stability_hours=24, stability_approved_by="مراجع مخبرية — يحتاج توقيع د. طارق",
+       stability_note="ثابت جداً",
+       stability_cold=72),
     _T("CPK",   "CPK (Total CK)",     "إنزيم العضلات CPK",    "U/L",   0, DEV_OTHER, [DIAMOND],
-       tube=TUBE_SERUM),
+       tube=TUBE_SERUM,
+       stability_hours=8, stability_approved_by="مراجع مخبرية — يحتاج توقيع د. طارق",
+       stability_note="⚠️ بيقل بمرور الوقت + حساس للضوء",
+       stability_cold=48,
+       cold_note="التبريد بيحافظ على النشاط الإنزيمي"),
 ]}
 
 
@@ -318,7 +444,7 @@ def required_tubes(test_keys) -> Dict[str, List[str]]:
     return out
 
 
-def tightest_stability(test_keys):
+def tightest_stability(test_keys, cold: bool = False):
     """
     أقصر مدة ثبات *معتمدة* بين التحاليل المطلوبة — دي اللي بتحكم النقل.
     التحاليل اللي مالهاش مدة معتمدة بتتتجاهل هنا وبتظهر في unvalidated().
@@ -329,10 +455,12 @@ def tightest_stability(test_keys):
         if str(k).startswith("X:"):
             continue
         t = get(k)
-        if t is None or t.stability_hours is None:
+        w = window(t, cold) if t else None
+        if w is None:
             continue
-        if best is None or t.stability_hours < best[0]:
-            best = (t.stability_hours, t.name_en, t.stability_note)
+        note = (t.cold_note or t.stability_note) if cold else t.stability_note
+        if best is None or w < best[0]:
+            best = (w, t.name_en, note)
     return best
 
 
@@ -345,6 +473,29 @@ def unvalidated(test_keys) -> List[str]:
         t = get(k)
         if t is not None and t.stability_hours is None:
             out.append(t.name_en)
+    return out
+
+
+def window(t: TestDef, cold: bool) -> Optional[float]:
+    """نافذة الثبات حسب ظروف النقل."""
+    if cold and t.stability_cold is not None:
+        return t.stability_cold
+    return t.stability_hours
+
+
+def cold_unsuitable(test_keys) -> List[TestDef]:
+    """
+    التحاليل اللي التبريد بيضرها.
+    دي مش مسألة وقت — دي نتيجة غلط. عينة مبرّدة فيها LDH بتدي رقم أقل
+    من الحقيقة، والبوتاسيوم بيدي رقم أعلى، والتجلط بيدي زمن مغلوط.
+    """
+    out = []
+    for k in test_keys:
+        if str(k).startswith("X:"):
+            continue
+        t = get(k)
+        if t is not None and not t.cold_ok:
+            out.append(t)
     return out
 
 

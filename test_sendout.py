@@ -987,15 +987,25 @@ def t_approved_have_owner():
 
 
 def t_none_means_no_enforcement():
-    """تحليل من غير مدة معتمدة مايتمنعش مهما طال النقل."""
-    alt = catalog.get("ALT")
-    assert alt.stability_hours is None
-    r = sample(tests=[{"code": "ALT"}])
-    r["collected_at"] = (_dt.now(_tzz.utc) - _td(hours=48)).isoformat(timespec="seconds")
-    assert schema.stability_check(r) == []
-    schema.mark_sent(r, actor="a")
-    schema.mark_received(r, actor="b")        # لازم يعدّي
-    assert r["status"] == schema.RECEIVED
+    """
+    تحليل من غير مدة معتمدة مايتمنعش مهما طال النقل.
+    بنستخدم تحليل وهمي لإن الـ 40 الحقيقيين كلهم اتعتمدوا —
+    والقاعدة دي لازم تفضل شغالة لأي تحليل يتضاف بعدين.
+    """
+    fake = catalog.TestDef(code="ZZNONE", name_en="Unvalidated", name_ar="غ",
+                           unit="U/L", decimals=0, device=catalog.DEV_OTHER,
+                           performed_at=(catalog.LACITE,), tube=catalog.TUBE_SERUM)
+    assert fake.stability_hours is None
+    catalog.TESTS["ZZNONE"] = fake
+    try:
+        r = sample(tests=[{"code": "ZZNONE"}])
+        r["collected_at"] = (_dt.now(_tzz.utc) - _td(hours=48)).isoformat(timespec="seconds")
+        assert schema.stability_check(r) == []
+        schema.mark_sent(r, actor="a")
+        schema.mark_received(r, actor="b")        # لازم يعدّي
+        assert r["status"] == schema.RECEIVED
+    finally:
+        del catalog.TESTS["ZZNONE"]
 
 
 def t_approved_still_enforced():
@@ -1019,12 +1029,17 @@ def t_mixed_request():
 
 
 def t_gap_is_visible():
-    """الفجوة لازم تظهر للمستخدم مش تتخبّى."""
-    r = sample(tests=[{"code": "ALT"}, {"code": "GGT"}])
-    w = schema.preanalytical_warnings(r)
-    assert any("مدة ثبات معتمدة" in x for x in w), w
-    assert len(catalog.pending_stability()) > 0
-    assert catalog.unvalidated(["ALT", "PTT"]) == ["ALT (SGPT)"]
+    """آلية عرض الفجوة لازم تفضل شغالة حتى لو كل التحاليل اتعتمدت."""
+    fake = catalog.TestDef(code="ZZTEST", name_en="Test", name_ar="ت",
+                           unit="U/L", decimals=0, device=catalog.DEV_OTHER,
+                           performed_at=(catalog.LACITE,))
+    assert fake.stability_hours is None
+    catalog.TESTS["ZZTEST"] = fake
+    try:
+        assert catalog.unvalidated(["ALT", "ZZTEST"]) == ["Test"]
+        assert any(t.code == "ZZTEST" for t in catalog.pending_stability())
+    finally:
+        del catalog.TESTS["ZZTEST"]
 
 
 def t_tightest_ignores_none():
@@ -1039,6 +1054,128 @@ check("المعتمد لسه بيتمنع", t_approved_still_enforced)
 check("طلب مختلط: المنع على المعتمد بس", t_mixed_request)
 check("الفجوة ظاهرة للمستخدم", t_gap_is_visible)
 check("أقصر مدة بتتجاهل غير المعتمد", t_tightest_ignores_none)
+
+
+def t_all_approved_now():
+    """كل الـ 40 تحليل بقى ليهم مدة معتمدة ومصدر."""
+    assert catalog.pending_stability() == [], \
+        [t.code for t in catalog.pending_stability()]
+    for t in catalog.TESTS.values():
+        assert t.stability_hours and t.stability_hours > 0, t.code
+        assert t.stability_approved_by, t.code
+        assert t.stability_note, t.code
+
+
+def t_time_critical_tests():
+    """التحاليل الحساسة للوقت لازم تفضل بأرقامها — دي حماية حقيقية."""
+    expect = {"CAION": 1, "PH": 1, "K": 4, "PTT": 4, "CKMB": 4,
+              "FBG": 4, "PP2": 4, "RBG": 4,
+              "TBIL": 8, "DBIL": 8, "PO4": 8, "LDH": 8, "CPK": 8, "CBC": 8}
+    for code, hrs in expect.items():
+        got = catalog.get(code).stability_hours
+        assert got == hrs, f"{code}: {got} بدل {hrs}"
+
+
+def t_ionized_ca_blocks_fast():
+    """
+    Ca++ ساعة في حرارة الغرفة، 4 ساعات على تلج.
+    ساعة ونص: تعدّي مبرّدة، وتتمنع في حرارة الغرفة.
+    """
+    r = sample(tests=[{"code": "CAION"}])
+    r["collected_at"] = (_dt.now(_tzz.utc) - _td(hours=1.5)).isoformat(timespec="seconds")
+    r["cold_chain"] = False
+    schema.mark_sent(r, actor="a")
+    try:
+        schema.mark_received(r, actor="b")
+    except schema.StabilityError:
+        pass
+    else:
+        raise AssertionError("Ca++ عدّى بعد ساعة ونص في حرارة الغرفة")
+
+    r2 = sample(tests=[{"code": "CAION"}])
+    r2["collected_at"] = (_dt.now(_tzz.utc) - _td(hours=1.5)).isoformat(timespec="seconds")
+    schema.mark_sent(r2, actor="a")
+    schema.mark_received(r2, actor="b")       # مبرّدة → تعدّي
+    assert r2["status"] == schema.RECEIVED
+
+
+check("كل التحاليل ليها مدة معتمدة ومصدر", t_all_approved_now)
+check("التحاليل الحساسة للوقت بأرقامها", t_time_critical_tests)
+check("⚠️ Ca++ بيتمنع بعد ساعة", t_ionized_ca_blocks_fast)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+print("\n[14] النقل المبرّد")
+
+COLD_BAD = {"K", "LDH", "PT", "PTT"}
+
+
+def t_cold_flags():
+    bad = {t.code for t in catalog.TESTS.values() if not t.cold_ok}
+    assert bad == COLD_BAD, bad
+    for c in COLD_BAD:
+        assert catalog.get(c).cold_note, f"{c} من غير سبب"
+
+
+def t_every_test_has_cold_window():
+    for t in catalog.TESTS.values():
+        assert t.stability_cold is not None, t.code
+
+
+def t_cold_extends_most():
+    """التبريد بيطوّل المدة لمعظم التحاليل."""
+    for c in ("ALT", "CAION", "PH", "FBG", "CKMB", "CBC"):
+        t = catalog.get(c)
+        assert t.stability_cold > t.stability_hours, c
+
+
+def t_cold_default_is_on():
+    r = sample()
+    assert r["cold_chain"] is True
+
+
+def t_cold_window_used():
+    """Ca++ بساعة في الغرفة و4 ساعات على تلج — العينة اللي 3 ساعات تعدّي."""
+    r = sample(tests=[{"code": "CAION"}])
+    r["collected_at"] = (_dt.now(_tzz.utc) - _td(hours=3)).isoformat(timespec="seconds")
+    assert schema.stability_check(r) == []          # مبرّدة → تمام
+    r["cold_chain"] = False
+    assert any(i["level"] == "expired" for i in schema.stability_check(r))
+
+
+def t_cold_still_expires():
+    r = sample(tests=[{"code": "CAION"}])
+    r["collected_at"] = (_dt.now(_tzz.utc) - _td(hours=5)).isoformat(timespec="seconds")
+    assert any(i["level"] == "expired" for i in schema.stability_check(r))
+
+
+def t_cold_harm_warned():
+    """⛔ التبريد الضار لازم يتحذّر منه بوضوح."""
+    r = sample(tests=[{"code": "K"}, {"code": "LDH"}, {"code": "ALT"}])
+    w = " ".join(schema.preanalytical_warnings(r))
+    assert "Potassium" in w and "LDH" in w
+    assert "pseudohyperkalemia" in w
+    r["cold_chain"] = False
+    w2 = " ".join(schema.preanalytical_warnings(r))
+    assert "pseudohyperkalemia" not in w2      # في حرارة الغرفة مفيش تحذير
+
+
+def t_cold_harm_not_blocking():
+    """التحذير مش بيمنع — حسين طلب ماتعطلش حاجة."""
+    r = sample(tests=[{"code": "LDH"}])
+    schema.mark_sent(r, actor="a")
+    schema.mark_received(r, actor="b")
+    assert r["status"] == schema.RECEIVED
+
+
+check("4 تحاليل التبريد ممنوع ليها", t_cold_flags)
+check("كل تحليل ليه نافذة مبرّدة", t_every_test_has_cold_window)
+check("التبريد بيطوّل المدة لمعظمها", t_cold_extends_most)
+check("النقل المبرّد هو الافتراضي", t_cold_default_is_on)
+check("النافذة الصح حسب ظروف النقل", t_cold_window_used)
+check("المبرّد لسه بينتهي في وقته", t_cold_still_expires)
+check("⛔ التحذير من التبريد الضار", t_cold_harm_warned)
+check("التحذير بينبّه مش بيمنع", t_cold_harm_not_blocking)
 
 print("\n" + "═" * 62)
 print(f"الإجمالي النهائي — نجح: {len(PASS)} | فشل: {len(FAIL)}")

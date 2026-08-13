@@ -196,6 +196,7 @@ def new_request(
     referring_doctor: str = "",
     fasting: Optional[bool] = None,
     collected_at: str = "",
+    cold_chain: bool = True,
     tests: Optional[List[Dict[str, Any]]] = None,
     tubes: Optional[List[Dict[str, Any]]] = None,
     created_by: str = "",
@@ -227,6 +228,11 @@ def new_request(
         # ⏱️ وقت السحب الحقيقي — أساس حساب الثبات.
         # لو مااتكتبش بنفترض وقت إنشاء الطلب (تقدير متحفّظ).
         "collected_at": collected_at or ts,
+
+        # ❄️ النقل المبرّد هو الافتراضي — ده الإجراء المتبع في أورانج.
+        # بيطوّل نافذة الثبات لمعظم التحاليل، بس في 4 تحاليل بيضرهم
+        # (K, LDH, PT, PTT) والنظام بينبّه عليهم.
+        "cold_chain": bool(cold_chain),
 
         "patient": {
             "name": patient_name.strip(),
@@ -358,6 +364,7 @@ def stability_check(req, at_iso: Optional[str] = None) -> List[Dict[str, Any]]:
     level: 'expired' = خلصت مدته | 'warning' = قرّب يخلص (>75%)
     """
     elapsed = hours_since_collection(req, at_iso)
+    cold = req.get("cold_chain", True)
     issues = []
     for t in req["tests"]:
         if t.get("custom") or not t.get("code"):
@@ -365,19 +372,18 @@ def stability_check(req, at_iso: Optional[str] = None) -> List[Dict[str, Any]]:
         td = catalog.get(t["code"])
         if td is None:
             continue
-        limit = td.stability_hours
+        limit = catalog.window(td, cold)
         if limit is None:
             # مفيش مدة معتمدة → مفيش منع. الفجوة بتتعرض في
             # preanalytical_warnings و catalog.pending_stability()
             continue
+        note = (td.cold_note or td.stability_note) if cold else td.stability_note
         if elapsed > limit:
             issues.append({"level": "expired", "test": td.name_en,
-                           "elapsed": elapsed, "limit": limit,
-                           "note": td.stability_note})
+                           "elapsed": elapsed, "limit": limit, "note": note})
         elif elapsed > limit * 0.75:
             issues.append({"level": "warning", "test": td.name_en,
-                           "elapsed": elapsed, "limit": limit,
-                           "note": td.stability_note})
+                           "elapsed": elapsed, "limit": limit, "note": note})
     return issues
 
 
@@ -393,7 +399,14 @@ def preanalytical_warnings(req) -> List[str]:
     if need_fast and req["clinical"].get("fasting") is not True:
         warns.append("🍽️ " + "، ".join(need_fast) + " — بتتطلب صيام، والصيام مش مؤكّد في الطلب")
 
-    tight = catalog.tightest_stability(keys)
+    cold = req.get("cold_chain", True)
+
+    # ⛔ التبريد الضار — ده مش تأخير، ده نتيجة غلط
+    if cold:
+        for t in catalog.cold_unsuitable(keys):
+            warns.append(f"⛔ {t.name_en}: {t.cold_note}")
+
+    tight = catalog.tightest_stability(keys, cold)
     if tight and tight[0] <= 4:
         warns.append(f"⏱️ أقصر مدة ثبات: {tight[1]} = {tight[0]:g} ساعة. {tight[2]}")
 

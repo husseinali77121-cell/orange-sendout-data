@@ -161,6 +161,15 @@ def request_card(req, extra: str = "", show_next: bool = True):
 
 def show_stability(req, at=None):
     """عرض حالة الثبات — بيرجّع True لو في تحليل خلص وقته."""
+    # التبريد الضار أهم من الوقت: العينة ممكن تكون في الوقت
+    # والنتيجة غلط أصلاً بسبب الحرارة.
+    if req.get("cold_chain", True):
+        keys = [t["code"] or t["key"] for t in req["tests"]]
+        for t in catalog.cold_unsuitable(keys):
+            st.markdown(f'<div class="ol-stop"><b>⛔ {t.name_en} — '
+                        f'التبريد بيغيّر النتيجة</b><br>'
+                        f'<small>{t.cold_note}</small></div>',
+                        unsafe_allow_html=True)
     issues = schema.stability_check(req, at)
     expired = [i for i in issues if i["level"] == "expired"]
     for i in issues:
@@ -324,7 +333,13 @@ def screen_new():
     doctor = c6.text_input("الطبيب المحوِّل")
 
     complaint = st.text_input("الشكوى")
-    fasting = st.radio("الصيام", ["غير محدد", "صايم", "فاطر"], horizontal=True)
+    c7, c8 = st.columns(2)
+    with c7:
+        fasting = st.radio("الصيام", ["غير محدد", "صايم", "فاطر"], horizontal=True)
+    with c8:
+        temp = st.radio("النقل", ["❄️ مبرّد / ثلج", "🌡️ حرارة الغرفة"],
+                        horizontal=True)
+    cold = temp.startswith("❄️")
     note = st.text_area("ملاحظة على الطلب", height=70,
                         placeholder="مثال: صايم 12 ساعة · وقت بداية الأكل 9:30")
 
@@ -393,7 +408,7 @@ def screen_new():
                 origin_branch=origin, performing_branch=performing,
                 patient_name=name or "—", lab_code=code or "—",
                 fasting={"صايم": True, "فاطر": False}.get(fasting),
-                tests=chosen)
+                cold_chain=cold, tests=chosen)
             st.markdown("**الأنابيب المطلوبة**")
             for t in preview["tubes"]:
                 st.markdown(f"- **{t['type']}** — {'، '.join(t['for'])}")
@@ -411,7 +426,7 @@ def screen_new():
                 sex=sex, phone=phone, complaint=complaint,
                 referring_doctor=doctor, request_note=note,
                 fasting={"صايم": True, "فاطر": False}.get(fasting),
-                tests=chosen, created_by=me()["username"])
+                cold_chain=cold, tests=chosen, created_by=me()["username"])
             get_store().create(req)
             st.session_state.adhoc = [{"name": "", "unit": ""}]
             st.session_state.picked = []
@@ -473,7 +488,8 @@ def screen_receive():
             request_card(req,
                          f" · في الطريق من {schema.hours_since_collection(req):.1f} ساعة",
                          show_next=False)
-            st.caption("🧪 " + "، ".join(t["type"] for t in req["tubes"]))
+            temp_ic = "❄️ مبرّد" if req.get("cold_chain", True) else "🌡️ حرارة الغرفة"
+            st.caption(f"{temp_ic} · 🧪 " + "، ".join(t["type"] for t in req["tubes"]))
             with st.expander(f"التحاليل ({len(req['tests'])})"):
                 st.write("، ".join(t["name"] for t in req["tests"]))
             if req["notes"]["on_request"]:
@@ -590,6 +606,66 @@ def _collect(edited, meta):
     return out
 
 
+def render_results(req, compact: bool = False):
+    """
+    عرض النتائج كجدول مقروء. الـ TSV للنسخ بيفضل موجود بس مطوي،
+    لإن الفني بيقرا الأول وبينسخ تاني.
+    """
+    crit_names = {c["test"] for c in req.get("critical", [])}
+    rows = []
+    for t in req["tests"]:
+        r = req["results"].get(t["key"])
+        if not r:
+            rows.append((t["name"], "—", t["unit"], "", False, False))
+            continue
+        td = catalog.get(t["code"]) if t["code"] else None
+        is_crit = t["name"] in crit_names or r.get("critical")
+        if td and td.kind == catalog.KIND_COMPOSITE:
+            comps = r.get("components") or {}
+            rows.append((td.name_en, "", "", r.get("note", ""), is_crit, True))
+            for a in td.components:
+                v = comps.get(a.code, "")
+                if v != "":
+                    rows.append((f"⌞ {a.name_en}", str(v), a.unit, "", False, False))
+        else:
+            rows.append((t["name"], str(r.get("value", "")), t["unit"],
+                         r.get("note", ""), is_crit, False))
+
+    html = ['<table style="width:100%;border-collapse:collapse;font-size:.92rem">']
+    html.append('<tr style="background:#FAFAFA;color:#666;font-size:.8rem">'
+                '<th style="text-align:right;padding:.4rem .6rem">التحليل</th>'
+                '<th style="text-align:right;padding:.4rem .6rem">النتيجة</th>'
+                '<th style="text-align:right;padding:.4rem .6rem">ملاحظة</th></tr>')
+    for name, val, unit, note, is_crit, is_head in rows:
+        if is_head:
+            html.append(f'<tr style="background:#F5F5F5"><td colspan="3" '
+                        f'style="padding:.4rem .6rem;font-weight:700">{name}'
+                        + (f' <span style="color:#C62828">⚠️</span>' if is_crit else '')
+                        + (f'<br><span style="font-weight:400;color:#666;'
+                           f'font-size:.82rem">{note}</span>' if note else '')
+                        + '</td></tr>')
+            continue
+        bg = "#FFEBEE" if is_crit else "#fff"
+        fg = "#C62828" if is_crit else "#212121"
+        weight = "700" if is_crit else "600"
+        vtxt = f'{val} <span style="color:#888;font-weight:400">{unit}</span>' if val != "—" else "—"
+        html.append(
+            f'<tr style="background:{bg};border-bottom:1px solid #EEE">'
+            f'<td style="padding:.45rem .6rem;color:#424242">{name}</td>'
+            f'<td style="padding:.45rem .6rem;color:{fg};font-weight:{weight};'
+            f'white-space:nowrap">{"⚠️ " if is_crit else ""}{vtxt}</td>'
+            f'<td style="padding:.45rem .6rem;color:#757575;font-size:.85rem">'
+            f'{note or ""}</td></tr>')
+    html.append("</table>")
+    st.markdown("".join(html), unsafe_allow_html=True)
+
+    if compact:
+        return
+    for lbl, k in (("ملاحظة الاستلام", "on_receipt"), ("ملاحظة النتيجة", "on_result")):
+        if req["notes"].get(k):
+            st.info(f"📝 {lbl}: {req['notes'][k]}")
+
+
 def screen_results():
     if not can(P_RESULT):
         st.info("دورك مايسمحش بإدخال النتائج.")
@@ -598,16 +674,31 @@ def screen_results():
     st.subheader("إدخال النتائج")
     db = get_store()
     b = me()["branch"]
+    # ⚠️ لازم RESULTED تفضل هنا — من غيرها الطلب بيختفي من الشاشة
+    # ومفيش طريقة تعتمده. ده كان طريق مسدود حقيقي.
     active = [r for r in db.open_requests(b, days_back=7)
               if r["performing_branch"] == b
-              and r["status"] in (schema.RECEIVED, schema.IN_PROGRESS)]
+              and r["status"] in (schema.RECEIVED, schema.IN_PROGRESS,
+                                  schema.RESULTED)]
 
     if not active:
         st.info("مفيش عينات على البنش.")
         return
 
-    labels = {f"{r['patient']['name']} — {r['patient']['lab_code']} "
-              f"({len(r['results'])}/{len(r['tests'])})": r for r in active}
+    # اللي مستني اعتماد ييجي الأول — ده أقرب حاجة للتسليم
+    active.sort(key=lambda r: (r["status"] != schema.RESULTED,
+                               r.get("created_at", "")))
+    pend_v = [r for r in active if r["status"] == schema.RESULTED]
+    if pend_v:
+        st.markdown(f'<div class="ol-warn">📄 {len(pend_v)} نتيجة مستنية '
+                    f'الاعتماد — اختارها من القايمة واعتمدها.</div>',
+                    unsafe_allow_html=True)
+
+    labels = {}
+    for r in active:
+        mark = "📄 " if r["status"] == schema.RESULTED else ""
+        labels[f"{mark}{r['patient']['name']} — {r['patient']['lab_code']} "
+               f"({len(r['results'])}/{len(r['tests'])})"] = r
     req = labels[st.selectbox("اختر العينة", list(labels))]
 
     request_card(req)
@@ -619,6 +710,48 @@ def screen_results():
         if st.button("ابدأ التشغيل", type="primary"):
             db.update(req["day"], req["id"],
                       lambda x: schema.mark_in_progress(x, actor=me()["username"]))
+            st.rerun()
+        return
+
+    # ── حالة RESULTED: النتائج خلصت — عرض ومراجعة واعتماد ────────────────
+    if req["status"] == schema.RESULTED:
+        st.divider()
+        st.markdown("#### راجع النتائج قبل الاعتماد")
+        render_results(req)
+
+        openc = [c for c in req.get("critical", []) if c.get("read_back") is None]
+        if openc:
+            st.markdown('<div class="ol-stop"><b>⚠️ في قيم حرجة متبلّغتش</b><br>'
+                        'الاعتماد مقفول لحد ما تسجّل الإبلاغ.</div>',
+                        unsafe_allow_html=True)
+            for c in openc:
+                who = st.text_input(f"مين استلم إبلاغ {c['test']}؟",
+                                    key=f"vrb_{req['id']}_{c['test']}")
+                if st.button("سجّل الإبلاغ", key=f"vrbb_{req['id']}_{c['test']}",
+                             disabled=not who.strip()):
+                    db.update(req["day"], req["id"], lambda x: schema.record_read_back(
+                        x, c["test"], called_by=me()["username"], received_by=who))
+                    st.rerun()
+            return
+
+        st.divider()
+        a, b2 = st.columns(2)
+        if can(P_VERIFY):
+            if a.button("✅ اعتماد إكلينيكي", type="primary"):
+                try:
+                    db.update(req["day"], req["id"],
+                              lambda x: schema.mark_verified(x, actor=me()["username"]))
+                    st.success(f"اتعتمدت — {branch_ar(req['origin_branch'])} "
+                               "يقدر ينقلها دلوقتي.")
+                    st.rerun()
+                except ValueError as e:
+                    st.error(str(e))
+        else:
+            a.info("مستنية اعتماد مدير المعمل.")
+        if b2.button("↩️ رجّعها للتعديل"):
+            db.update(req["day"], req["id"], lambda x: schema.transition(
+                x, schema.IN_PROGRESS, actor=me()["username"],
+                branch=me()["branch"], detail={"reason": "تعديل نتيجة"}))
             st.rerun()
         return
 
@@ -786,21 +919,31 @@ def screen_transcribe():
     req = labels[st.selectbox("اختر الطلب", list(labels))]
 
     request_card(req)
-    st.markdown("#### انسخ والصق في نظامك")
-    st.caption("التحليل / القيمة / الوحدة / الملاحظة — مفصولين بـ Tab.")
-    st.code(schema.as_tsv(req), language=None)
 
-    for label, key in (("ملاحظة الاستلام", "on_receipt"),
-                       ("ملاحظة النتيجة", "on_result")):
-        if req["notes"].get(key):
-            st.info(f"📝 {label}: {req['notes'][key]}")
+    st.markdown("#### النتائج")
+    render_results(req)
 
     for c in req.get("critical", []):
         rb = c.get("read_back") or {}
         st.markdown(f'<div class="ol-warn">⚠️ <b>{c["test"]} = {c["value"]}</b> — '
-                    f'قيمة حرجة، اتبلّغت لـ {rb.get("received_by","—")} '
+                    f'اتبلّغت لـ {rb.get("received_by","—")} '
                     f'في {schema.local_str(rb.get("at",""))}</div>',
                     unsafe_allow_html=True)
+
+    t, w = schema.tat(req), schema.rework(req)
+    bits = []
+    if t["transit"] is not None:
+        bits.append(f"النقل {t['transit']:.0f} د")
+    if t["bench"] is not None:
+        bits.append(f"التشغيل {t['bench']:.0f} د")
+    if not w["first_pass"]:
+        bits.append(f"🔁 اتعادت {w['reruns']} مرة")
+    if bits:
+        st.caption(" · ".join(bits))
+
+    with st.expander("📋 نسخة للّصق في نظامك (Tab-separated)"):
+        st.caption("التحليل / القيمة / الوحدة / الملاحظة")
+        st.code(schema.as_tsv(req), language=None)
 
     st.divider()
     who = st.text_input("مين نقل النتيجة؟", value=me()["name"])
@@ -849,7 +992,10 @@ def screen_search():
                    if t["initial_result"] else "")
 
     if req["results"]:
-        st.code(schema.as_tsv(req), language=None)
+        st.markdown("#### النتائج")
+        render_results(req)
+        with st.expander("📋 نسخة للّصق"):
+            st.code(schema.as_tsv(req), language=None)
 
     st.markdown("#### سجل التدقيق")
     for e in req["events"]:
