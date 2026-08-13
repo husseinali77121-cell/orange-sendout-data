@@ -231,8 +231,8 @@
           "note": "",
           "critical": false,
           "by": "lacite",
-          "at": "2026-08-13T13:44:13+00:00",
-          "revision": 1
+          "at": "2026-08-13T13:44:27+00:00",
+          "revision": 2
         }
       },
       "transport": {
@@ -304,11 +304,23 @@
           "detail": {
             "test": "Albumin"
           }
+        },
+        {
+          "at": "2026-08-13T13:44:27+00:00",
+          "action": "RESULT_AMENDED",
+          "actor": "lacite",
+          "branch": "LACITE",
+          "detail": {
+            "test": "Albumin",
+            "from": 4,
+            "to": 4,
+            "revision": 2
+          }
         }
       ],
       "created_at": "2026-08-13T13:40:07+00:00",
       "created_by": "diamond",
-      "updated_at": "2026-08-13T13:44:13+00:00"
+      "updated_at": "2026-08-13T13:44:27+00:00"
     }
   }
 }
