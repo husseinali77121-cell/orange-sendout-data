@@ -263,6 +263,20 @@
           "by": "lacite",
           "at": "2026-08-13T13:45:34+00:00",
           "revision": 1
+        },
+        "PT": {
+          "components": {
+            "PT_SEC": 12,
+            "PC": 100,
+            "INR": 1
+          },
+          "value": null,
+          "unit": "",
+          "note": "",
+          "critical": false,
+          "by": "lacite",
+          "at": "2026-08-13T13:46:01+00:00",
+          "revision": 1
         }
       },
       "transport": {
@@ -373,11 +387,20 @@
           "detail": {
             "test": "Cholesterol, Total"
           }
+        },
+        {
+          "at": "2026-08-13T13:46:01+00:00",
+          "action": "RESULT_SET",
+          "actor": "lacite",
+          "branch": "LACITE",
+          "detail": {
+            "test": "PT / PC / INR"
+          }
         }
       ],
       "created_at": "2026-08-13T13:40:07+00:00",
       "created_by": "diamond",
-      "updated_at": "2026-08-13T13:45:34+00:00"
+      "updated_at": "2026-08-13T13:46:01+00:00"
     }
   }
 }
