@@ -655,6 +655,7 @@ def t_glucose_serum():
         t = catalog.get(c)
         assert t.tube == catalog.TUBE_SERUM, f"{c} = {t.tube}"
         assert t.stability_hours == catalog.GLUCOSE_STABILITY_HOURS
+        assert t.stability_approved_by, f"{c} مفيش مين اعتمدها"
 
 
 def t_fasting_warning():
@@ -745,4 +746,300 @@ if rq:
     print(f"\n⚠️  محتاج مراجعة د. طارق ({len(rq)}):")
     for t in rq:
         print(f"  • {t.code} — {t.note}")
+print("═" * 62)
+
+# ══════════════════════════════════════════════════════════════════════════
+print("\n[10] الألوان واللوحات")
+
+
+def t_status_visuals():
+    """كل حالة ليها لون وأيقونة وخطوة تالية — مفيش حالة ناقصة."""
+    all_st = {schema.DRAFT, schema.SENT, schema.RECEIVED, schema.REJECTED,
+              schema.IN_PROGRESS, schema.RESULTED, schema.VERIFIED,
+              schema.CLOSED, schema.CANCELLED}
+    for name, d in (("STATUS_AR", schema.STATUS_AR),
+                    ("STATUS_COLOR", schema.STATUS_COLOR),
+                    ("STATUS_HEX", schema.STATUS_HEX),
+                    ("NEXT_STEP", schema.NEXT_STEP)):
+        assert set(d) == all_st, f"{name} ناقص: {all_st - set(d)}"
+
+
+def t_colors_distinct():
+    """الألوان مختلفة — عشان الحالة تتعرف من اللون من غير قراية."""
+    fgs = [v[0] for v in schema.STATUS_HEX.values()]
+    dupes = {c for c in fgs if fgs.count(c) > 1}
+    assert not dupes, f"ألوان مكررة: {dupes}"
+    for s, (fg, bg) in schema.STATUS_HEX.items():
+        assert fg.startswith("#") and len(fg) == 7, f"{s}: {fg}"
+        assert bg.startswith("#") and len(bg) == 7, f"{s}: {bg}"
+
+
+def t_panels_valid():
+    """كل كود في اللوحات لازم يكون تحليل موجود فعلاً."""
+    for pname, codes in catalog.PANELS.items():
+        assert codes, f"{pname} فاضية"
+        for c in codes:
+            assert catalog.get(c), f"{pname}: كود مش موجود {c}"
+
+
+def t_panels_single_branch():
+    """اللوحة الواحدة كل تحاليلها في نفس الفرع — عشان ماتبعتش لفرعين."""
+    for pname, codes in catalog.PANELS.items():
+        branches = {catalog.get(c).performed_at for c in codes}
+        assert len(branches) == 1, f"{pname} متوزّعة على فروع: {branches}"
+
+
+def t_both_branches_have_panels():
+    for b in (catalog.LACITE, catalog.DIAMOND):
+        assert catalog.panels_for_route(b), f"{b} من غير لوحات"
+
+
+def t_panel_expands():
+    liver = catalog.PANELS["🫀 وظائف كبد"]
+    r = schema.new_request(origin_branch=catalog.DIAMOND,
+                           performing_branch=catalog.LACITE,
+                           patient_name="ت", lab_code="1",
+                           tests=[{"code": c} for c in liver])
+    assert len(r["tests"]) == len(liver) == 8
+
+
+check("كل حالة ليها لون وأيقونة وخطوة", t_status_visuals)
+check("ألوان الحالات كلها مختلفة", t_colors_distinct)
+check("أكواد اللوحات كلها صحيحة", t_panels_valid)
+check("كل لوحة في فرع واحد", t_panels_single_branch)
+check("الفرعين عندهم لوحات", t_both_branches_have_panels)
+check("اللوحة بتتفرد لتحاليلها", t_panel_expands)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+print("\n[11] ترتيب التحاليل")
+
+# ترتيب حسين الأصلي — الاختبار ده بيقفله عشان مايترجعش أبجدي بالغلط
+HUSSEIN_ORDER = [
+    "TBIL", "DBIL", "ALT", "AST", "ALP", "GGT", "TP", "ALB", "UREA", "CREA",
+    "URIC", "NA", "K", "CA", "CAION", "PH", "CL", "PO4", "CHOL", "TRIG",
+    "HDL", "LDL", "ASO", "CRP_B", "VITD",
+    "FBG", "PP2", "PT", "PTT", "RBG",
+    "HBA1C", "CRP_H", "RF_H", "FERR",
+]
+DIAMOND_ORDER = ["MG", "CKMB", "CBC", "LDH", "RF_D", "CPK"]
+
+
+def t_lacite_order():
+    got = [t.code for t in catalog.tests_for_route(catalog.LACITE)]
+    assert got == HUSSEIN_ORDER, f"\nالمتوقع: {HUSSEIN_ORDER}\nالفعلي:  {got}"
+
+
+def t_diamond_order():
+    got = [t.code for t in catalog.tests_for_route(catalog.DIAMOND)]
+    assert got == DIAMOND_ORDER, got
+
+
+def t_not_alphabetical():
+    """لو رجع أبجدي، Direct هيسبق Total و 2h-PP هيقفز للأول."""
+    got = [t.name_en for t in catalog.tests_for_route(catalog.LACITE)]
+    assert got != sorted(got), "الترتيب رجع أبجدي!"
+    assert got.index("Bilirubin, Total") < got.index("Bilirubin, Direct")
+    assert got.index("ALT (SGPT)") < got.index("2h Post-Prandial Glucose")
+
+
+def t_adjacency():
+    """الأزواج اللي بتتقرا مع بعض لازم تفضل ملزوقة."""
+    o = [t.code for t in catalog.tests_for_route(catalog.LACITE)]
+    for a, b_ in [("TBIL", "DBIL"), ("ALT", "AST"), ("CA", "CAION"),
+                  ("NA", "K"), ("CHOL", "TRIG"), ("HDL", "LDL"), ("PT", "PTT")]:
+        assert o.index(b_) - o.index(a) == 1, f"{a} و {b_} اتفرقوا"
+
+
+def t_order_index_complete():
+    assert set(catalog.ORDER_INDEX) == set(catalog.TESTS)
+    assert catalog.ORDER_INDEX["TBIL"] == 0
+
+
+check("ترتيب لاسيتيه مطابق لترتيب حسين", t_lacite_order)
+check("ترتيب دياموند مطابق", t_diamond_order)
+check("⚠️ الترتيب مش أبجدي", t_not_alphabetical)
+check("الأزواج المترابطة جنب بعض", t_adjacency)
+check("ORDER_INDEX كامل", t_order_index_complete)
+
+
+def t_request_uses_catalog_order():
+    """مهما كان ترتيب الضغط، الشيت بيطلع بترتيب القاموس."""
+    r = schema.new_request(
+        origin_branch=catalog.DIAMOND, performing_branch=catalog.LACITE,
+        patient_name="ت", lab_code="1",
+        tests=[{"code": c} for c in ["AST", "TBIL", "PT", "ALT", "DBIL"]])
+    assert [t["code"] for t in r["tests"]] == ["TBIL", "DBIL", "ALT", "AST", "PT"]
+
+
+def t_adhoc_goes_last():
+    r = schema.new_request(
+        origin_branch=catalog.DIAMOND, performing_branch=catalog.LACITE,
+        patient_name="ت", lab_code="1",
+        tests=[{"custom_name": "Lipase"}, {"code": "AST"}, {"code": "TBIL"}])
+    codes = [t["code"] or t["name"] for t in r["tests"]]
+    assert codes == ["TBIL", "AST", "Lipase"], codes
+
+
+check("الطلب بيترتّب بترتيب القاموس مش الضغط", t_request_uses_catalog_order)
+check("التحاليل الإضافية بتروح الآخر", t_adhoc_goes_last)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+print("\n[12] TAT مع إعادة التشغيل")
+
+from datetime import datetime as _dt, timedelta as _td, timezone as _tzz
+
+_BASE = _dt(2026, 8, 13, 8, 0, tzinfo=_tzz.utc)
+
+
+def _stamp(r, mins):
+    """توقيتات ثابتة عشان الاختبار يبقى قاطع مش تقريبي."""
+    r["created_at"] = _BASE.isoformat(timespec="seconds")
+    assert len(mins) == len(r["events"]), f"{len(mins)} != {len(r['events'])}"
+    for e, m in zip(r["events"], mins):
+        e["at"] = (_BASE + _td(minutes=m)).isoformat(timespec="seconds")
+
+
+def _run(rework=False):
+    r = sample(tests=[{"code": "ALT"}])
+    schema.mark_sent(r, actor="a"); schema.mark_received(r, actor="b")
+    schema.mark_in_progress(r, actor="b")
+    schema.set_result(r, "ALT", 50, actor="b"); schema.mark_resulted(r, actor="b")
+    if rework:
+        schema.transition(r, schema.IN_PROGRESS, actor="dr", branch=catalog.LACITE)
+        schema.set_result(r, "ALT", 88, actor="b")
+        schema.mark_resulted(r, actor="b")
+    schema.mark_verified(r, actor="dr"); schema.mark_closed(r, actor="a")
+    return r
+
+
+def t_tat_clean_run():
+    r = _run()
+    _stamp(r, [5, 20, 25, 60, 65, 70, 75])
+    t, w = schema.tat(r), schema.rework(r)
+    assert (t["transit"], t["bench"], t["verify"], t["total"]) == (15, 45, 5, 75), t
+    assert w["first_pass"] and w["reruns"] == 0
+
+
+def t_tat_rework_verify_correct():
+    """⚠️ الباج الأصلي: زمن الاعتماد كان بيتحسب من *أول* نتيجة."""
+    r = _run(rework=True)
+    #    SENT RECV INPR SET RESULTED  INPR AMEND RESULTED VERIF CLOSED
+    _stamp(r, [5,  20,  25,  60, 65,      90,  95,   150,     155,  160])
+    t = schema.tat(r)
+    assert t["verify"] == 5, f"verify={t['verify']} — الباج رجع!"
+    assert t["initial_result"] == 45      # أول نتيجة: 20 → 65
+    assert t["bench"] == 130              # آخر نتيجة: 20 → 150
+    assert t["transit"] == 15
+
+
+def t_rework_metrics():
+    r = _run(rework=True)
+    _stamp(r, [5, 20, 25, 60, 65, 90, 95, 150, 155, 160])
+    w = schema.rework(r)
+    assert w["reruns"] == 1 and w["first_pass"] is False
+    assert w["rework_minutes"] == 85      # 65 → 150
+    assert w["amendments"] == 1
+
+
+def t_rework_hidden_before():
+    """الفرق بين الحالتين لازم يبان في الأرقام، مش يتخبّى."""
+    a, b_ = _run(), _run(rework=True)
+    _stamp(a, [5, 20, 25, 60, 65, 70, 75])
+    _stamp(b_, [5, 20, 25, 60, 65, 90, 95, 150, 155, 160])
+    assert schema.tat(a)["verify"] == schema.tat(b_)["verify"] == 5
+    assert schema.tat(b_)["bench"] > schema.tat(a)["bench"]
+    assert schema.rework(a)["reruns"] < schema.rework(b_)["reruns"]
+
+
+def t_tat_partial_still_none():
+    r = sample()
+    schema.mark_sent(r, actor="r")
+    t = schema.tat(r)
+    assert t["create_to_send"] is not None
+    assert t["transit"] is None and t["bench"] is None and t["verify"] is None
+
+
+check("TAT سليم من غير إعادة", t_tat_clean_run)
+check("⚠️ زمن الاعتماد صح بعد الإعادة (كان 496 بدل 5)", t_tat_rework_verify_correct)
+check("مقاييس إعادة التشغيل", t_rework_metrics)
+check("الإعادة بتبان في الأرقام مش بتتخبّى", t_rework_hidden_before)
+check("المراحل اللي محصلتش لسه None", t_tat_partial_still_none)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+print("\n[13] الثبات: مفيش افتراض ضمني")
+
+
+def t_default_is_none():
+    """⚠️ الافتراضي كان 8.0 — رقم مخترع كان بيمنع 31 تحليل بثقة كاذبة."""
+    d = catalog.TestDef.__dataclass_fields__["stability_hours"].default
+    assert d is None, f"الافتراضي رجع {d} — الافتراض الضمني رجع!"
+
+
+def t_approved_have_owner():
+    """أي مدة ثبات معتمدة لازم يكون معاها مين اعتمدها."""
+    for t in catalog.TESTS.values():
+        if t.stability_hours is not None:
+            assert t.stability_approved_by, f"{t.code}: مدة من غير اعتماد"
+            assert t.stability_hours > 0
+
+
+def t_none_means_no_enforcement():
+    """تحليل من غير مدة معتمدة مايتمنعش مهما طال النقل."""
+    alt = catalog.get("ALT")
+    assert alt.stability_hours is None
+    r = sample(tests=[{"code": "ALT"}])
+    r["collected_at"] = (_dt.now(_tzz.utc) - _td(hours=48)).isoformat(timespec="seconds")
+    assert schema.stability_check(r) == []
+    schema.mark_sent(r, actor="a")
+    schema.mark_received(r, actor="b")        # لازم يعدّي
+    assert r["status"] == schema.RECEIVED
+
+
+def t_approved_still_enforced():
+    """اللي ليه مدة معتمدة لسه بيتمنع — الحماية ماضاعتش."""
+    r = sample(tests=[{"code": "PTT"}])
+    r["collected_at"] = (_dt.now(_tzz.utc) - _td(hours=6)).isoformat(timespec="seconds")
+    schema.mark_sent(r, actor="a")
+    try:
+        schema.mark_received(r, actor="b")
+    except schema.StabilityError:
+        return
+    raise AssertionError("PTT عدّى رغم انتهاء مدته المعتمدة")
+
+
+def t_mixed_request():
+    """طلب فيه معتمد وغير معتمد: المنع على المعتمد بس."""
+    r = sample(tests=[{"code": "PTT"}, {"code": "ALT"}, {"code": "GGT"}])
+    r["collected_at"] = (_dt.now(_tzz.utc) - _td(hours=6)).isoformat(timespec="seconds")
+    names = [i["test"] for i in schema.stability_check(r)]
+    assert names == ["PTT"], names
+
+
+def t_gap_is_visible():
+    """الفجوة لازم تظهر للمستخدم مش تتخبّى."""
+    r = sample(tests=[{"code": "ALT"}, {"code": "GGT"}])
+    w = schema.preanalytical_warnings(r)
+    assert any("مدة ثبات معتمدة" in x for x in w), w
+    assert len(catalog.pending_stability()) > 0
+    assert catalog.unvalidated(["ALT", "PTT"]) == ["ALT (SGPT)"]
+
+
+def t_tightest_ignores_none():
+    tight = catalog.tightest_stability(["ALT", "PTT", "GGT"])
+    assert tight and tight[1] == "PTT" and tight[0] == 4
+
+
+check("⚠️ الافتراضي = None مش 8 ساعات", t_default_is_none)
+check("كل مدة معتمدة معاها مين اعتمدها", t_approved_have_owner)
+check("غير معتمد = مفيش منع", t_none_means_no_enforcement)
+check("المعتمد لسه بيتمنع", t_approved_still_enforced)
+check("طلب مختلط: المنع على المعتمد بس", t_mixed_request)
+check("الفجوة ظاهرة للمستخدم", t_gap_is_visible)
+check("أقصر مدة بتتجاهل غير المعتمد", t_tightest_ignores_none)
+
+print("\n" + "═" * 62)
+print(f"الإجمالي النهائي — نجح: {len(PASS)} | فشل: {len(FAIL)}")
 print("═" * 62)

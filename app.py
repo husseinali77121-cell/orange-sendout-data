@@ -126,20 +126,36 @@ def whatsapp_link(phone: str, text: str) -> str:
     return f"https://wa.me/{digits}?text={urllib.parse.quote(text)}"
 
 
+def status_badge(status: str) -> str:
+    """شارة ملوّنة — اللون بيقول الحالة قبل ما تقرا الكلام."""
+    fg, bg = schema.STATUS_HEX.get(status, ("#616161", "#F5F5F5"))
+    return (f'<span style="background:{bg};color:{fg};padding:.15rem .55rem;'
+            f'border-radius:999px;font-size:.8rem;font-weight:700;'
+            f'white-space:nowrap">{schema.STATUS_COLOR.get(status,"")} '
+            f'{schema.STATUS_AR.get(status, status)}</span>')
+
+
 def status_chip(req) -> str:
-    return f"{schema.STATUS_COLOR.get(req['status'],'')} {schema.STATUS_AR.get(req['status'], req['status'])}"
+    return status_badge(req["status"])
 
 
-def request_card(req, extra: str = ""):
+def request_card(req, extra: str = "", show_next: bool = True):
     p = req["patient"]
+    fg, _ = schema.STATUS_HEX.get(req["status"], ("#C1440E", ""))
+    nxt = ""
+    if show_next:
+        nxt = (f'<br><span style="color:{fg};font-size:.78rem">'
+               f'↩ {schema.NEXT_STEP.get(req["status"],"")}</span>')
+    done = len(req.get("results", {}))
+    prog = f" · {done}/{len(req['tests'])} نتيجة" if done else ""
     st.markdown(
-        f"""<div class="ol-card">
+        f"""<div class="ol-card" style="border-right-color:{fg}">
         <b>{p['name']}</b> &nbsp;·&nbsp; كود {p['lab_code']}
         {' · ' + p['age'] if p['age'] else ''}<br>
         <span class="ol-id">{req['id']}</span><br>
-        {status_chip(req)} &nbsp;·&nbsp;
+        {status_badge(req['status'])} &nbsp;
         {branch_ar(req['origin_branch'])} ← {branch_ar(req['performing_branch'])}
-        &nbsp;·&nbsp; {len(req['tests'])} تحليل {extra}
+        &nbsp;·&nbsp; {len(req['tests'])} تحليل{prog} {extra}{nxt}
         </div>""", unsafe_allow_html=True)
 
 
@@ -206,7 +222,7 @@ def screen_dashboard():
 
     mine = [r for r in rows if b in (r["origin_branch"], r["performing_branch"])]
     incoming = [r for r in mine if r["performing_branch"] == b
-                and r["status"] in (schema.SENT,)]
+                and r["status"] == schema.SENT]
     bench = [r for r in mine if r["performing_branch"] == b
              and r["status"] in (schema.RECEIVED, schema.IN_PROGRESS)]
     to_close = [r for r in mine if r["origin_branch"] == b
@@ -214,25 +230,75 @@ def screen_dashboard():
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("طلبات اليوم", len(mine))
-    c2.metric("في الطريق إليك", len(incoming))
-    c3.metric("على البنش", len(bench))
-    c4.metric("جاهزة للنقل", len(to_close))
+    c2.metric("🚚 في الطريق إليك", len(incoming))
+    c3.metric("🔬 على البنش", len(bench))
+    c4.metric("✅ جاهزة للنقل", len(to_close))
 
+    # الحاجات اللي محتاجة تصرّف منك — فوق وبالألوان
+    urgent = []
+    if incoming:
+        urgent.append(("SENT", f"{len(incoming)} عينة مستنية استلام", "استلام"))
+    if bench:
+        urgent.append(("IN_PROGRESS", f"{len(bench)} عينة على البنش", "النتائج"))
     if to_close:
-        st.success(f"في {len(to_close)} نتيجة معتمدة مستنية النقل — روح لتبويب «نقل وقفل».")
+        urgent.append(("VERIFIED", f"{len(to_close)} نتيجة جاهزة للنقل", "نقل وقفل"))
+    for status, msg, tab in urgent:
+        fg, bg = schema.STATUS_HEX[status]
+        st.markdown(f'<div style="background:{bg};border-right:4px solid {fg};'
+                    f'padding:.6rem .9rem;border-radius:6px;margin:.25rem 0;'
+                    f'color:{fg};font-weight:600">{msg} — روح لتبويب «{tab}»</div>',
+                    unsafe_allow_html=True)
+    if not urgent:
+        st.success("مفيش حاجة مستنية منك دلوقتي. 👌")
+
+    # ⏳ فجوة مدد الثبات — بتفضل ظاهرة لحد ما تتقفل
+    pend = catalog.pending_stability()
+    if pend and can(P_VERIFY):
+        with st.expander(f"⏳ {len(pend)} تحليل مستني اعتماد مدة الثبات"):
+            st.caption("التحاليل دي مفيش ليها نافذة ثبات معتمدة، فالنظام "
+                       "**مش** بيمنع استلامهم مهما طال النقل. ده مقصود — "
+                       "أحسن من رقم مخترع بيمنع عينات سليمة بثقة كاذبة. "
+                       "حدّد المدة في `catalog.py` مع اسم اللي اعتمدها.")
+            ok = [t for t in catalog.TESTS.values() if t.stability_hours is not None]
+            st.markdown(f"**معتمدة ({len(ok)}):** " +
+                        "، ".join(f"{t.code} {t.stability_hours:g}س" for t in ok))
+            st.markdown(f"**مستنية ({len(pend)}):** " +
+                        "، ".join(t.code for t in pend))
 
     st.divider()
-    flt = st.selectbox("عرض", ["الكل"] + [schema.STATUS_AR[s] for s in
-                                          (schema.SENT, schema.RECEIVED, schema.IN_PROGRESS,
-                                           schema.RESULTED, schema.VERIFIED, schema.CLOSED,
-                                           schema.REJECTED)])
-    for r in mine:
-        if flt != "الكل" and schema.STATUS_AR.get(r["status"]) != flt:
+
+    # مفتاح الألوان
+    with st.expander("🎨 معنى الألوان"):
+        for s in (schema.DRAFT, schema.SENT, schema.RECEIVED, schema.IN_PROGRESS,
+                  schema.RESULTED, schema.VERIFIED, schema.CLOSED,
+                  schema.REJECTED, schema.CANCELLED):
+            st.markdown(f"{status_badge(s)} &nbsp; {schema.NEXT_STEP.get(s,'')}",
+                        unsafe_allow_html=True)
+
+    order = [schema.SENT, schema.RECEIVED, schema.IN_PROGRESS, schema.RESULTED,
+             schema.VERIFIED, schema.DRAFT, schema.CLOSED,
+             schema.REJECTED, schema.CANCELLED]
+    opts = ["الكل"] + [f"{schema.STATUS_COLOR[s]} {schema.STATUS_AR[s]}"
+                       for s in order if any(r["status"] == s for r in mine)]
+    flt = st.selectbox("عرض", opts)
+
+    shown = 0
+    for s in order:
+        group = [r for r in mine if r["status"] == s]
+        if not group:
             continue
-        extra = ""
-        if r["status"] in (schema.SENT,):
-            extra = f" · في الطريق من {schema.hours_since_collection(r):.1f} ساعة"
-        request_card(r, extra)
+        if flt != "الكل" and flt != f"{schema.STATUS_COLOR[s]} {schema.STATUS_AR[s]}":
+            continue
+        st.markdown(f"**{schema.STATUS_COLOR[s]} {schema.STATUS_AR[s]}** "
+                    f"({len(group)})")
+        for r in group:
+            extra = ""
+            if s == schema.SENT:
+                extra = f" · في الطريق من {schema.hours_since_collection(r):.1f} ساعة"
+            request_card(r, extra)
+            shown += 1
+    if not shown:
+        st.info("مفيش طلبات في العرض ده.")
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -263,14 +329,41 @@ def screen_new():
                         placeholder="مثال: صايم 12 ساعة · وقت بداية الأكل 9:30")
 
     st.markdown("#### التحاليل")
-    chosen = []
-    for dev, tests in catalog.grouped_for_route(performing).items():
-        with st.expander(f"🔬 {catalog.DEVICE_NAMES[dev]} ({len(tests)})",
-                         expanded=(dev == catalog.DEV_BIOBASE)):
-            cols = st.columns(3)
-            for i, t in enumerate(tests):
-                if cols[i % 3].checkbox(t.display, key=f"tk_{t.code}"):
-                    chosen.append({"code": t.code})
+
+    # كل checkbox كان بيعمل rerun — 34 مربع = 34 دورة.
+    # الـ multiselect بيعمل دورة واحدة مهما اخترت، وبيسمح بالبحث بالكتابة.
+    if "picked" not in st.session_state:
+        st.session_state.picked = []
+
+    st.caption("لوحات جاهزة — ضغطة واحدة بتضيف المجموعة كلها")
+    panels = catalog.panels_for_route(performing)
+    pcols = st.columns(2)
+    for i, (pname, pcodes) in enumerate(panels.items()):
+        if pcols[i % 2].button(pname, key=f"pn_{i}", use_container_width=True):
+            for c in pcodes:
+                if c not in st.session_state.picked:
+                    st.session_state.picked.append(c)
+            st.rerun()
+
+    all_tests = catalog.tests_for_route(performing)
+    label_of = {t.code: f"{t.name_en} ({t.unit})" if t.unit else t.name_en
+                for t in all_tests}
+    picked = st.multiselect(
+        "التحاليل المطلوبة", options=[t.code for t in all_tests],
+        default=[c for c in st.session_state.picked if c in label_of],
+        format_func=lambda c: label_of.get(c, c),
+        placeholder="اكتب اسم التحليل أو اختار من اللوحات فوق")
+    if picked != st.session_state.picked:
+        st.session_state.picked = picked
+
+    if picked:
+        a, b_ = st.columns([3, 1])
+        a.caption(f"مختار {len(picked)} تحليل")
+        if b_.button("🗑 امسح الكل", use_container_width=True):
+            st.session_state.picked = []
+            st.rerun()
+
+    chosen = [{"code": c} for c in picked]
 
     # تحاليل إضافية — كل ما تكتب واحد، خانة جديدة بتفتح
     st.markdown("#### تحاليل إضافية")
@@ -321,6 +414,7 @@ def screen_new():
                 tests=chosen, created_by=me()["username"])
             get_store().create(req)
             st.session_state.adhoc = [{"name": "", "unit": ""}]
+            st.session_state.picked = []
             st.session_state.last_new = req["id"]
             st.success(f"اتحفظ — {req['id']}")
             st.rerun()
@@ -370,59 +464,131 @@ def screen_receive():
         st.info("مفيش عينات مستنية الاستلام.")
         return
 
+    st.caption(f"{len(pending)} عينة مستنية — الاستلام ضغطة واحدة، "
+               "والرفض جوّه القايمة.")
+
     for req in pending:
+        fg, bg = schema.STATUS_HEX[schema.SENT]
         with st.container(border=True):
-            request_card(req, f" · في الطريق من {schema.hours_since_collection(req):.1f} ساعة")
-            st.caption("الأنابيب: " + "، ".join(t["type"] for t in req["tubes"]))
-            st.caption("التحاليل: " + "، ".join(t["name"] for t in req["tests"]))
+            request_card(req,
+                         f" · في الطريق من {schema.hours_since_collection(req):.1f} ساعة",
+                         show_next=False)
+            st.caption("🧪 " + "، ".join(t["type"] for t in req["tubes"]))
+            with st.expander(f"التحاليل ({len(req['tests'])})"):
+                st.write("، ".join(t["name"] for t in req["tests"]))
             if req["notes"]["on_request"]:
                 st.caption(f"📝 {req['notes']['on_request']}")
 
             expired = show_stability(req)
 
-            c1, c2 = st.columns(2)
-            cond = c1.selectbox("حالة العينة", schema.SPECIMEN_CONDITIONS,
-                                key=f"cond_{req['id']}")
-            note = c2.text_input("ملاحظة الاستلام", key=f"rn_{req['id']}")
-
-            override = False
-            if expired:
-                override = st.checkbox(
-                    "أتحمّل مسؤولية التشغيل رغم انتهاء وقت الثبات "
-                    "(هيتسجّل باسمي في سجل التدقيق)",
-                    key=f"ov_{req['id']}")
-
-            a, b_ = st.columns(2)
-            if a.button("✅ استلام", key=f"acc_{req['id']}", type="primary",
-                        disabled=(expired and not override)):
+            # الاستلام السريع: زرار واحد. التفاصيل اختيارية جوّه القايمة.
+            c1, c2 = st.columns([2, 1])
+            if c1.button("📦 استلام", key=f"acc_{req['id']}", type="primary",
+                         use_container_width=True, disabled=expired):
                 try:
                     db.update(req["day"], req["id"], lambda x: schema.mark_received(
-                        x, actor=me()["username"], condition=cond, note=note,
-                        override_stability=override))
-                    st.success("اتسجّل الاستلام.")
+                        x, actor=me()["username"], condition="سليمة"))
                     st.rerun()
-                except schema.StabilityError as e:
-                    st.error(str(e))
                 except Exception as e:
                     st.error(f"مش قادر أسجّل الاستلام: {e}")
 
-            with b_.popover("❌ رفض العينة"):
+            with c2.popover("⋯ تفاصيل", use_container_width=True):
+                cond = st.selectbox("حالة العينة", schema.SPECIMEN_CONDITIONS,
+                                    key=f"cond_{req['id']}")
+                note = st.text_input("ملاحظة الاستلام", key=f"rn_{req['id']}")
+                override = False
+                if expired:
+                    override = st.checkbox(
+                        "أتحمّل مسؤولية التشغيل رغم انتهاء وقت الثبات "
+                        "(هيتسجّل باسمي)", key=f"ov_{req['id']}")
+                if st.button("استلام بالتفاصيل دي", key=f"acd_{req['id']}",
+                             type="primary"):
+                    try:
+                        db.update(req["day"], req["id"], lambda x: schema.mark_received(
+                            x, actor=me()["username"], condition=cond, note=note,
+                            override_stability=override))
+                        st.rerun()
+                    except schema.StabilityError as e:
+                        st.error(str(e))
+                    except Exception as e:
+                        st.error(f"فشل: {e}")
+
+                st.divider()
                 reason = st.selectbox("سبب الرفض", schema.REJECTION_REASONS,
                                       key=f"rr_{req['id']}")
-                rnote = st.text_input("تفاصيل", key=f"rd_{req['id']}")
-                if st.button("أكّد الرفض", key=f"rj_{req['id']}"):
+                rnote = st.text_input("تفاصيل الرفض", key=f"rd_{req['id']}")
+                if st.button("⛔ ارفض العينة", key=f"rj_{req['id']}"):
                     try:
                         db.update(req["day"], req["id"], lambda x: schema.mark_rejected(
                             x, actor=me()["username"], reason=reason, note=rnote))
                         st.warning("العينة اترفضت — بلّغ الفرع المرسِل.")
                         st.rerun()
                     except Exception as e:
-                        st.error(f"مش قادر أسجّل الرفض: {e}")
+                        st.error(f"فشل: {e}")
+
+            if expired:
+                st.caption("⛔ الاستلام مقفول — افتح «تفاصيل» لو هتتحمّل المسؤولية.")
 
 
 # ══════════════════════════════════════════════════════════════════════════
 # شاشة 4 — إدخال النتيجة
 # ══════════════════════════════════════════════════════════════════════════
+
+def _build_sheet(req):
+    """
+    بيفرد الطلب لصفوف: صف لكل قيمة هتتكتب.
+    اللوحات المركّبة (PT / CBC) بتتفرد لمكوّناتها، فالشيت بيبقى مسطّح
+    والفني بيشوف كل حاجة قدامه مرة واحدة.
+    بيرجّع (rows, meta) — meta فيها (مفتاح التحليل، كود المكوّن أو None)
+    """
+    rows, meta = [], []
+    for t in req["tests"]:
+        td = catalog.get(t["code"]) if t["code"] else None
+        cur = req["results"].get(t["key"]) or {}
+        if td and td.kind == catalog.KIND_COMPOSITE:
+            comps = cur.get("components") or {}
+            for j, a in enumerate(td.components):
+                rows.append({
+                    "التحليل": f"{td.name_en} · {a.name_en}",
+                    "النتيجة": str(comps.get(a.code, "")),
+                    "الوحدة": a.unit,
+                    "ملاحظة": cur.get("note", "") if j == 0 else "",
+                    "حرجة": bool(cur.get("critical")) if j == 0 else False,
+                })
+                meta.append((t["key"], a.code))
+        else:
+            rows.append({
+                "التحليل": t["name"],
+                "النتيجة": str(cur.get("value", "")),
+                "الوحدة": t["unit"],
+                "ملاحظة": cur.get("note", ""),
+                "حرجة": bool(cur.get("critical")),
+            })
+            meta.append((t["key"], None))
+    return rows, meta
+
+
+def _collect(edited, meta):
+    """بيجمّع صفوف الشيت تاني في نتائج لكل تحليل."""
+    out = {}
+    for i, (key, comp) in enumerate(meta):
+        r = edited[i]
+        val = str(r.get("النتيجة", "")).strip()
+        note = str(r.get("ملاحظة", "")).strip()
+        crit = bool(r.get("حرجة"))
+        g = out.setdefault(key, {"value": None, "components": {},
+                                 "note": "", "critical": False, "any": False})
+        if comp is None:
+            if val:
+                g["value"] = _num(val); g["any"] = True
+        else:
+            if val:
+                g["components"][comp] = _num(val); g["any"] = True
+        if note and not g["note"]:
+            g["note"] = note
+        g["critical"] = g["critical"] or crit
+    return out
+
 
 def screen_results():
     if not can(P_RESULT):
@@ -442,70 +608,77 @@ def screen_results():
 
     labels = {f"{r['patient']['name']} — {r['patient']['lab_code']} "
               f"({len(r['results'])}/{len(r['tests'])})": r for r in active}
-    pick = st.selectbox("اختر العينة", list(labels))
-    req = labels[pick]
+    req = labels[st.selectbox("اختر العينة", list(labels))]
 
     request_card(req)
-    if req["notes"]["on_request"]:
-        st.caption(f"📝 طلب: {req['notes']['on_request']}")
-    if req["notes"]["on_receipt"]:
-        st.caption(f"📝 استلام: {req['notes']['on_receipt']}")
+    for lbl, k in (("طلب", "on_request"), ("استلام", "on_receipt")):
+        if req["notes"].get(k):
+            st.caption(f"📝 {lbl}: {req['notes'][k]}")
 
     if req["status"] == schema.RECEIVED:
-        if st.button("ابدأ التشغيل"):
+        if st.button("ابدأ التشغيل", type="primary"):
             db.update(req["day"], req["id"],
                       lambda x: schema.mark_in_progress(x, actor=me()["username"]))
             st.rerun()
         return
 
+    # ── الشيت: كل التحاليل مرة واحدة، حفظ واحد ────────────────────────────
     st.divider()
-    for t in req["tests"]:
-        existing = req["results"].get(t["key"])
-        done = "✅" if existing else "⬜"
-        with st.expander(f"{done} {t['name']}", expanded=not existing):
-            val, comps = result_inputs(t, f"r_{req['id']}_{t['key']}", existing)
+    st.caption("اكتب النتائج كلها، وبعدين احفظ مرة واحدة. "
+               "علّم «حرجة» للقيم اللي تستدعي إبلاغ فوري.")
 
-            # ملاحظة على كل تحليل لوحده — المستوى اللي طلبته
-            note = st.text_input(
-                "ملاحظة على التحليل ده",
-                value=(existing or {}).get("note", ""),
-                key=f"n_{req['id']}_{t['key']}",
-                placeholder="مثال: اتعمل diluted 1:2 · hemolysis قد ترفع القيمة")
+    rows, meta = _build_sheet(req)
+    edited = st.data_editor(
+        rows, key=f"sheet_{req['id']}", hide_index=True,
+        use_container_width=True, num_rows="fixed",
+        column_config={
+            "التحليل": st.column_config.TextColumn(disabled=True, width="medium"),
+            "النتيجة": st.column_config.TextColumn(width="small"),
+            "الوحدة":  st.column_config.TextColumn(disabled=True, width="small"),
+            "ملاحظة":  st.column_config.TextColumn(width="medium"),
+            "حرجة":    st.column_config.CheckboxColumn(width="small"),
+        })
 
-            crit = st.checkbox("⚠️ قيمة حرجة — تستدعي إبلاغ فوري",
-                               value=(existing or {}).get("critical", False),
-                               key=f"c_{req['id']}_{t['key']}")
+    gnote = st.text_area("ملاحظة عامة على النتيجة", height=70,
+                         value=req["notes"].get("on_result", ""),
+                         key=f"gn_{req['id']}")
 
-            # مقارنة بالنتيجة السابقة لنفس المريض
-            if val is not None:
-                prev, when = db.previous_value(req["patient"]["key"], t["key"],
-                                               exclude_id=req["id"])
-                if prev is not None:
-                    d = schema.delta_check(val, prev)
-                    if d and d["flag"]:
-                        st.markdown(
-                            f'<div class="ol-warn">📈 فرق كبير عن آخر نتيجة: '
-                            f'{prev} ← {val} ({d["pct"]:+g}%) بتاريخ '
-                            f'{schema.local_str(when, "%Y-%m-%d")}. راجع قبل الاعتماد.'
-                            f'</div>', unsafe_allow_html=True)
+    collected = _collect(edited, meta)
+    filled = [k for k, g in collected.items() if g["any"]]
+    total = len(req["tests"])
+    st.caption(f"متكتب: {len(filled)} من {total}")
 
-            if st.button("احفظ النتيجة", key=f"sv_{req['id']}_{t['key']}"):
-                try:
-                    db.update(req["day"], req["id"], lambda x: schema.set_result(
-                        x, t["key"], val, actor=me()["username"], note=note,
-                        components=comps, critical=crit))
-                    st.success("اتحفظت.")
-                    st.rerun()
-                except ValueError as e:
-                    st.error(str(e))
+    c1, c2 = st.columns(2)
 
-    # إبلاغ القيم الحرجة
+    # حفظ الكل في عملية واحدة → commit واحد على GitHub مش 17
+    if c1.button("💾 احفظ كل النتائج", type="primary", disabled=not filled):
+        def _save(x):
+            for key, g in collected.items():
+                if not g["any"]:
+                    continue
+                schema.set_result(x, key, g["value"], actor=me()["username"],
+                                  note=g["note"], components=g["components"] or None,
+                                  critical=g["critical"])
+            if gnote.strip():
+                x["notes"]["on_result"] = gnote.strip()
+        try:
+            db.update(req["day"], req["id"], _save)
+            st.success(f"اتحفظ {len(filled)} تحليل.")
+            st.rerun()
+        except ValueError as e:
+            st.error(str(e))
+        except Exception as e:
+            st.error(f"الحفظ فشل: {e}")
+
     fresh = db.get(req["day"], req["id"])
+    remaining = [t["name"] for t in fresh["tests"] if t["key"] not in fresh["results"]]
     openc = [c for c in fresh.get("critical", []) if c.get("read_back") is None]
+
+    # ── الإبلاغ عن القيم الحرجة ───────────────────────────────────────────
     if openc:
         st.divider()
         st.markdown('<div class="ol-stop"><b>⚠️ قيم حرجة مستنية الإبلاغ</b><br>'
-                    'الاعتماد مش هيشتغل قبل تسجيل الإبلاغ.</div>',
+                    'الاعتماد مقفول لحد ما تسجّل الإبلاغ.</div>',
                     unsafe_allow_html=True)
         for c in openc:
             st.markdown(f"**{c['test']} = {c['value']}**")
@@ -514,41 +687,56 @@ def screen_results():
                        f"(كود {fresh['patient']['lab_code']})\n{c['test']}: {c['value']}")
                 st.link_button("📱 بلّغ على واتساب",
                                whatsapp_link(fresh["patient"]["phone"], msg))
-            who = st.text_input("مين استلم الإبلاغ؟", key=f"rb_{c['test']}",
+            who = st.text_input("مين استلم الإبلاغ؟", key=f"rb_{req['id']}_{c['test']}",
                                 placeholder="اسم الطبيب أو الشخص")
-            rnote = st.text_input("ملاحظة", key=f"rbn_{c['test']}")
-            if st.button("سجّل الإبلاغ", key=f"rbb_{c['test']}", disabled=not who.strip()):
+            if st.button("سجّل الإبلاغ", key=f"rbb_{req['id']}_{c['test']}",
+                         disabled=not who.strip()):
                 db.update(req["day"], req["id"], lambda x: schema.record_read_back(
-                    x, c["test"], called_by=me()["username"],
-                    received_by=who, note=rnote))
+                    x, c["test"], called_by=me()["username"], received_by=who))
                 st.success("الإبلاغ اتسجّل.")
                 st.rerun()
 
+    # ── الإنهاء والاعتماد ─────────────────────────────────────────────────
     st.divider()
-    remaining = [t["name"] for t in fresh["tests"] if t["key"] not in fresh["results"]]
-    gnote = st.text_area("ملاحظة عامة على النتيجة", height=70,
-                         value=fresh["notes"].get("on_result", ""))
-    c1, c2 = st.columns(2)
-    if c1.button("أنهيت كل النتائج", type="primary", disabled=bool(remaining)):
-        try:
-            db.update(req["day"], req["id"], lambda x: schema.mark_resulted(
-                x, actor=me()["username"], note=gnote))
-            st.success("النتائج جاهزة للاعتماد.")
-            st.rerun()
-        except ValueError as e:
-            st.error(str(e))
     if remaining:
-        c1.caption("ناقص: " + "، ".join(remaining))
+        st.warning("ناقص: " + "، ".join(remaining))
+        return
+    if openc:
+        return
 
-    if fresh["status"] == schema.RESULTED and can(P_VERIFY):
-        if c2.button("✅ اعتماد إكلينيكي", type="primary"):
+    if fresh["status"] == schema.IN_PROGRESS and can(P_VERIFY):
+        # حساب الفرع عنده الصلاحيتين — خطوة واحدة بدل اتنين
+        st.caption("ده هينهي النتائج ويعتمدها، ويخلّي "
+                   f"{branch_ar(fresh['origin_branch'])} يقدر ينقلها.")
+        if c2.button("✅ إنهاء واعتماد", type="primary"):
+            def _fin(x):
+                schema.mark_resulted(x, actor=me()["username"], note=gnote)
+                schema.mark_verified(x, actor=me()["username"])
             try:
-                db.update(req["day"], req["id"],
-                          lambda x: schema.mark_verified(x, actor=me()["username"]))
-                st.success("اتعتمدت — الفرع المرسِل يقدر ينقلها دلوقتي.")
+                db.update(req["day"], req["id"], _fin)
+                st.success(f"اتعتمدت — {branch_ar(fresh['origin_branch'])} "
+                           "يقدر ينقلها دلوقتي.")
                 st.rerun()
             except ValueError as e:
                 st.error(str(e))
+    elif fresh["status"] == schema.IN_PROGRESS:
+        if c2.button("أنهيت كل النتائج", type="primary"):
+            try:
+                db.update(req["day"], req["id"], lambda x: schema.mark_resulted(
+                    x, actor=me()["username"], note=gnote))
+                st.success("مستنية اعتماد مدير المعمل.")
+                st.rerun()
+            except ValueError as e:
+                st.error(str(e))
+    elif fresh["status"] == schema.RESULTED:
+        if can(P_VERIFY):
+            if c2.button("✅ اعتماد إكلينيكي", type="primary"):
+                db.update(req["day"], req["id"],
+                          lambda x: schema.mark_verified(x, actor=me()["username"]))
+                st.success("اتعتمدت.")
+                st.rerun()
+        else:
+            st.info("النتائج كاملة — مستنية اعتماد مدير المعمل.")
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -563,11 +751,35 @@ def screen_transcribe():
     st.subheader("نقل النتائج وقفل الطلب")
     db = get_store()
     b = me()["branch"]
-    ready = [r for r in db.open_requests(b, days_back=14)
-             if r["origin_branch"] == b and r["status"] == schema.VERIFIED]
+    mine = [r for r in db.open_requests(b, days_back=14) if r["origin_branch"] == b]
+    ready = [r for r in mine if r["status"] == schema.VERIFIED]
+
+    # الطلبات اللي لسه في الطريق — بنقول للمستخدم واقفة فين بالظبط
+    # بدل ما نخفيها ونسيبه يتساءل.
+    waiting = [r for r in mine if r["status"] in
+               (schema.DRAFT, schema.SENT, schema.RECEIVED,
+                schema.IN_PROGRESS, schema.RESULTED)]
+
+    if not ready and waiting:
+        st.info("مفيش نتيجة جاهزة للنقل دلوقتي — دي حالة الطلبات المفتوحة:")
+    elif not ready:
+        st.info("مفيش طلبات مفتوحة.")
+
+    if waiting:
+        stage = {
+            schema.DRAFT: "لسه ماتبعتتش من عندك",
+            schema.SENT: "في الطريق — الفرع التاني لسه مستلمش",
+            schema.RECEIVED: "اتستلمت — لسه ماتشغّلتش",
+            schema.IN_PROGRESS: "تحت التشغيل",
+            schema.RESULTED: "النتائج اتكتبت — مستنية الاعتماد",
+        }
+        with st.expander(f"طلبات لسه شغالة ({len(waiting)})", expanded=not ready):
+            for r in waiting:
+                done = len(r["results"])
+                request_card(r, f" · {stage.get(r['status'],'')}"
+                                + (f" ({done}/{len(r['tests'])} نتيجة)" if done else ""))
 
     if not ready:
-        st.info("مفيش نتائج معتمدة مستنية النقل.")
         return
 
     labels = {f"{r['patient']['name']} — {r['patient']['lab_code']}": r for r in ready}
@@ -575,7 +787,7 @@ def screen_transcribe():
 
     request_card(req)
     st.markdown("#### انسخ والصق في نظامك")
-    st.caption("عمود التحليل / القيمة / الوحدة / الملاحظة — مفصولين بـ Tab.")
+    st.caption("التحليل / القيمة / الوحدة / الملاحظة — مفصولين بـ Tab.")
     st.code(schema.as_tsv(req), language=None)
 
     for label, key in (("ملاحظة الاستلام", "on_receipt"),
@@ -623,11 +835,18 @@ def screen_search():
         return
 
     request_card(req)
-    t = schema.tat(req)
+    t, w = schema.tat(req), schema.rework(req)
     c = st.columns(4)
     for i, (k, lbl) in enumerate([("transit", "النقل"), ("bench", "التشغيل"),
                                   ("verify", "الاعتماد"), ("total", "الإجمالي")]):
         c[i].metric(lbl, f"{t[k]:.0f} د" if t[k] is not None else "—")
+    if not w["first_pass"]:
+        extra = (f" · ضاع {w['rework_minutes']:.0f} دقيقة"
+                 if w["rework_minutes"] else "")
+        st.warning(f"🔁 اتعاد تشغيلها {w['reruns']} مرة"
+                   f" · {w['amendments']} تعديل نتيجة{extra}")
+        st.caption(f"أول نتيجة طلعت بعد {t['initial_result']:.0f} دقيقة من الاستلام."
+                   if t["initial_result"] else "")
 
     if req["results"]:
         st.code(schema.as_tsv(req), language=None)

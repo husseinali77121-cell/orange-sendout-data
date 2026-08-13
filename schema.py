@@ -51,15 +51,42 @@ TRANSITIONS: Dict[str, set] = {
 }
 
 STATUS_AR = {
-    DRAFT: "مسودة", SENT: "اتبعتت", RECEIVED: "اتستلمت", REJECTED: "مرفوضة",
-    IN_PROGRESS: "تحت التشغيل", RESULTED: "فيها نتيجة", VERIFIED: "معتمدة",
-    CLOSED: "مقفولة", CANCELLED: "ملغية",
+    DRAFT: "مسودة", SENT: "تم التسليم", RECEIVED: "تم الاستلام",
+    REJECTED: "مرفوضة", IN_PROGRESS: "تحت التشغيل",
+    RESULTED: "النتيجة جاهزة", VERIFIED: "معتمدة",
+    CLOSED: "خلص", CANCELLED: "ملغية",
 }
 
 STATUS_COLOR = {
-    DRAFT: "⚪", SENT: "🔵", RECEIVED: "🟣", REJECTED: "🔴",
-    IN_PROGRESS: "🟡", RESULTED: "🟠", VERIFIED: "🟢",
-    CLOSED: "✅", CANCELLED: "⚫",
+    DRAFT: "📝", SENT: "🚚", RECEIVED: "📦", REJECTED: "⛔",
+    IN_PROGRESS: "🔬", RESULTED: "📄", VERIFIED: "✅",
+    CLOSED: "🏁", CANCELLED: "⚫",
+}
+
+# ألوان الحالات: (لون النص، لون الخلفية)
+STATUS_HEX = {
+    DRAFT:       ("#616161", "#F5F5F5"),
+    SENT:        ("#1565C0", "#E3F2FD"),
+    RECEIVED:    ("#6A1B9A", "#F3E5F5"),
+    IN_PROGRESS: ("#E65100", "#FFF3E0"),
+    RESULTED:    ("#00695C", "#E0F2F1"),
+    VERIFIED:    ("#2E7D32", "#E8F5E9"),
+    CLOSED:      ("#37474F", "#ECEFF1"),
+    REJECTED:    ("#C62828", "#FFEBEE"),
+    CANCELLED:   ("#455A64", "#ECEFF1"),
+}
+
+# الخطوة الجاية لكل حالة — بتتعرض للمستخدم بدل ما يتساءل
+NEXT_STEP = {
+    DRAFT: "سلّمها للمندوب",
+    SENT: "الفرع التاني لسه مستلمش",
+    RECEIVED: "لسه ماتشغّلتش",
+    IN_PROGRESS: "بيتكتب فيها النتايج",
+    RESULTED: "مستنية الاعتماد",
+    VERIFIED: "جاهزة للنقل",
+    CLOSED: "خلصت",
+    REJECTED: "اترفضت — لازم عينة جديدة",
+    CANCELLED: "اتلغت",
 }
 
 # أسباب رفض العينة (ISO 15189 §7.2 — pre-examination)
@@ -265,6 +292,12 @@ def _normalize_tests(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         out.append(entry)
     if not out:
         raise ValueError("لازم تختار تحليل واحد على الأقل")
+
+    # ترتيب التحاليل بترتيب القاموس مش بترتيب ضغط المستخدم.
+    # السبب: الشيت على البنش لازم يبقى شكله واحد كل مرة، عشان الفني
+    # يحفظ مكان كل تحليل بعينه. التحاليل الإضافية بتروح الآخر.
+    out.sort(key=lambda e: catalog.ORDER_INDEX.get(e["code"], 10_000)
+             if e["code"] else 10_001)
     return out
 
 
@@ -333,6 +366,10 @@ def stability_check(req, at_iso: Optional[str] = None) -> List[Dict[str, Any]]:
         if td is None:
             continue
         limit = td.stability_hours
+        if limit is None:
+            # مفيش مدة معتمدة → مفيش منع. الفجوة بتتعرض في
+            # preanalytical_warnings و catalog.pending_stability()
+            continue
         if elapsed > limit:
             issues.append({"level": "expired", "test": td.name_en,
                            "elapsed": elapsed, "limit": limit,
@@ -359,6 +396,13 @@ def preanalytical_warnings(req) -> List[str]:
     tight = catalog.tightest_stability(keys)
     if tight and tight[0] <= 4:
         warns.append(f"⏱️ أقصر مدة ثبات: {tight[1]} = {tight[0]:g} ساعة. {tight[2]}")
+
+    unval = catalog.unvalidated(keys)
+    if unval:
+        n = len(unval)
+        sample_names = "، ".join(unval[:3]) + ("…" if n > 3 else "")
+        warns.append(f"ℹ️ {n} تحليل مفيش ليهم مدة ثبات معتمدة "
+                     f"({sample_names}) — النظام مش هيمنع استلامهم.")
 
     tubes = catalog.required_tubes(keys)
     if len(tubes) > 1:
@@ -509,32 +553,72 @@ def mark_cancelled(req, *, actor, reason=""):
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# TAT — بيتحسب من الـ events مجاناً
+# TAT — بيتحسب من الـ events
+#
+# ⚠️ الإصدار الأول كان بياخد *أول* حدث لكل مرحلة. ده غلط لما يحصل إعادة
+# تشغيل: طلب راح RESULTED ← IN_PROGRESS ← RESULTED ← VERIFIED كان بيحسب
+# زمن الاعتماد من النتيجة *الأولى*، فيطلع 496 دقيقة بدل 5.
+# دلوقتي كل مرحلة بتاخد الحدث الصح (أول ولا آخر)، وفي مقاييس منفصلة
+# لإعادة التشغيل بدل ما تتخبّى جوة الأرقام.
 # ══════════════════════════════════════════════════════════════════════════
 
-def _event_time(req, action) -> Optional[datetime]:
-    for e in req.get("events", []):
-        if e["action"] == action:
-            return datetime.fromisoformat(e["at"])
-    return None
+def _event_times(req, action) -> List[datetime]:
+    """كل مرات حصول الحدث ده، بالترتيب."""
+    return [datetime.fromisoformat(e["at"])
+            for e in req.get("events", []) if e["action"] == action]
+
+
+def _event_time(req, action, which: str = "first") -> Optional[datetime]:
+    ts = _event_times(req, action)
+    if not ts:
+        return None
+    return ts[0] if which == "first" else ts[-1]
+
+
+def rework(req) -> Dict[str, Any]:
+    """
+    إعادة التشغيل: كام مرة رجع الطلب للبنش بعد ما طلعت نتيجة.
+    ده رقم إداري مهم — بيقول لك جودة الشغل من أول مرة.
+    """
+    in_prog = _event_times(req, f"→{IN_PROGRESS}")
+    resulted = _event_times(req, f"→{RESULTED}")
+    reruns = max(0, len(in_prog) - 1)
+    lost = None
+    if reruns and len(resulted) >= 2:
+        lost = round((resulted[-1] - resulted[0]).total_seconds() / 60, 1)
+    return {"reruns": reruns, "first_pass": reruns == 0,
+            "rework_minutes": lost,
+            "amendments": len([e for e in req.get("events", [])
+                               if e["action"] == "RESULT_AMENDED"])}
 
 
 def tat(req) -> Dict[str, Optional[float]]:
-    """مدد بالدقايق. None = المرحلة لسه محصلتش."""
+    """
+    مدد بالدقايق. None = المرحلة لسه محصلتش.
+    - transit / bench: من أول استلام (مرة واحدة بطبيعتها)
+    - initial_result: أول نتيجة — قياس السرعة من أول مرة
+    - bench: لحد آخر نتيجة — الزمن الفعلي على البنش شامل الإعادة
+    - verify: من *آخر* نتيجة لآخر اعتماد — ده اللي كان مكسور
+    """
     created = datetime.fromisoformat(req["created_at"])
-    pts = {k: _event_time(req, f"→{k}") for k in
-           (SENT, RECEIVED, IN_PROGRESS, RESULTED, VERIFIED, CLOSED)}
+    sent = _event_time(req, f"→{SENT}")
+    recv = _event_time(req, f"→{RECEIVED}")
+    res_first = _event_time(req, f"→{RESULTED}", "first")
+    res_last = _event_time(req, f"→{RESULTED}", "last")
+    ver_last = _event_time(req, f"→{VERIFIED}", "last")
+    closed = _event_time(req, f"→{CLOSED}", "last")
 
     def dm(a, b):
         return round((b - a).total_seconds() / 60, 1) if a and b else None
 
     return {
-        "create_to_send": dm(created, pts[SENT]),
-        "transit": dm(pts[SENT], pts[RECEIVED]),          # زمن النقل بين الفروع
-        "bench": dm(pts[RECEIVED], pts[RESULTED]),        # زمن التشغيل
-        "verify": dm(pts[RESULTED], pts[VERIFIED]),
-        "transcribe": dm(pts[VERIFIED], pts[CLOSED]),
-        "total": dm(created, pts[CLOSED] or pts[VERIFIED]),
+        "create_to_send": dm(created, sent),
+        "transit": dm(sent, recv),                  # زمن النقل بين الفروع
+        "initial_result": dm(recv, res_first),      # أول نتيجة
+        "bench": dm(recv, res_last),                # شامل الإعادة
+        "verify": dm(res_last, ver_last),           # آخر نتيجة → الاعتماد
+        "transcribe": dm(ver_last, closed),
+        "total": dm(created, closed or ver_last),
     }
 
 
