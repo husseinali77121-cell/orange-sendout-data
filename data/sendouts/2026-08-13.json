@@ -1,0 +1,216 @@
+{
+  "schema_version": 1,
+  "day": "2026-08-13",
+  "requests": {
+    "SND-DMD-20260813-164007-FAF07338": {
+      "schema_version": 1,
+      "id": "SND-DMD-20260813-164007-FAF07338",
+      "day": "2026-08-13",
+      "origin_branch": "DIAMOND",
+      "performing_branch": "LACITE",
+      "status": "DRAFT",
+      "collected_at": "2026-08-13T13:40:07+00:00",
+      "patient": {
+        "name": "حسين علي",
+        "lab_code": "10045",
+        "age": "32",
+        "sex": "ذكر",
+        "phone": "",
+        "key": "N:حسين علي"
+      },
+      "clinical": {
+        "complaint": "D.m , HTN",
+        "referring_doctor": "",
+        "fasting": true
+      },
+      "notes": {
+        "on_request": "",
+        "on_receipt": "",
+        "on_result": ""
+      },
+      "tubes": [
+        {
+          "type": "Serum Gel (أصفر/أحمر)",
+          "count": 1,
+          "for": [
+            "ALT (SGPT)",
+            "AST (SGOT)",
+            "Albumin",
+            "Bilirubin, Direct",
+            "Calcium, Ionized",
+            "Cholesterol, Total",
+            "GGT",
+            "HDL-Cholesterol",
+            "LDL-Cholesterol",
+            "Phosphorus (PO₄)",
+            "Sodium (Na⁺)",
+            "Triglycerides",
+            "Urea",
+            "Vitamin D3 (25-OH)"
+          ]
+        },
+        {
+          "type": "EDTA (بنفسجي)",
+          "count": 1,
+          "for": [
+            "HbA1c"
+          ]
+        },
+        {
+          "type": "Citrate 3.2% (أزرق)",
+          "count": 1,
+          "for": [
+            "PT / PC / INR",
+            "PTT"
+          ]
+        }
+      ],
+      "tests": [
+        {
+          "key": "ALT",
+          "code": "ALT",
+          "name": "ALT (SGPT)",
+          "unit": "U/L",
+          "kind": "numeric",
+          "custom": false
+        },
+        {
+          "key": "AST",
+          "code": "AST",
+          "name": "AST (SGOT)",
+          "unit": "U/L",
+          "kind": "numeric",
+          "custom": false
+        },
+        {
+          "key": "ALB",
+          "code": "ALB",
+          "name": "Albumin",
+          "unit": "g/dL",
+          "kind": "numeric",
+          "custom": false
+        },
+        {
+          "key": "DBIL",
+          "code": "DBIL",
+          "name": "Bilirubin, Direct",
+          "unit": "mg/dL",
+          "kind": "numeric",
+          "custom": false
+        },
+        {
+          "key": "CAION",
+          "code": "CAION",
+          "name": "Calcium, Ionized",
+          "unit": "mmol/L",
+          "kind": "numeric",
+          "custom": false
+        },
+        {
+          "key": "CHOL",
+          "code": "CHOL",
+          "name": "Cholesterol, Total",
+          "unit": "mg/dL",
+          "kind": "numeric",
+          "custom": false
+        },
+        {
+          "key": "GGT",
+          "code": "GGT",
+          "name": "GGT",
+          "unit": "U/L",
+          "kind": "numeric",
+          "custom": false
+        },
+        {
+          "key": "HDL",
+          "code": "HDL",
+          "name": "HDL-Cholesterol",
+          "unit": "mg/dL",
+          "kind": "numeric",
+          "custom": false
+        },
+        {
+          "key": "LDL",
+          "code": "LDL",
+          "name": "LDL-Cholesterol",
+          "unit": "mg/dL",
+          "kind": "numeric",
+          "custom": false
+        },
+        {
+          "key": "PO4",
+          "code": "PO4",
+          "name": "Phosphorus (PO₄)",
+          "unit": "mg/dL",
+          "kind": "numeric",
+          "custom": false
+        },
+        {
+          "key": "NA",
+          "code": "NA",
+          "name": "Sodium (Na⁺)",
+          "unit": "mmol/L",
+          "kind": "numeric",
+          "custom": false
+        },
+        {
+          "key": "TRIG",
+          "code": "TRIG",
+          "name": "Triglycerides",
+          "unit": "mg/dL",
+          "kind": "numeric",
+          "custom": false
+        },
+        {
+          "key": "UREA",
+          "code": "UREA",
+          "name": "Urea",
+          "unit": "mg/dL",
+          "kind": "numeric",
+          "custom": false
+        },
+        {
+          "key": "VITD",
+          "code": "VITD",
+          "name": "Vitamin D3 (25-OH)",
+          "unit": "ng/mL",
+          "kind": "numeric",
+          "custom": false
+        },
+        {
+          "key": "HBA1C",
+          "code": "HBA1C",
+          "name": "HbA1c",
+          "unit": "%",
+          "kind": "numeric",
+          "custom": false
+        },
+        {
+          "key": "PT",
+          "code": "PT",
+          "name": "PT / PC / INR",
+          "unit": "",
+          "kind": "composite",
+          "custom": false
+        },
+        {
+          "key": "PTT",
+          "code": "PTT",
+          "name": "PTT",
+          "unit": "sec",
+          "kind": "numeric",
+          "custom": false
+        }
+      ],
+      "results": {},
+      "transport": {},
+      "receipt": {},
+      "critical": [],
+      "events": [],
+      "created_at": "2026-08-13T13:40:07+00:00",
+      "created_by": "diamond",
+      "updated_at": "2026-08-13T13:40:07+00:00"
+    }
+  }
+}
