@@ -213,6 +213,16 @@
           "by": "lacite",
           "at": "2026-08-13T13:42:40+00:00",
           "revision": 1
+        },
+        "AST": {
+          "value": 20,
+          "components": null,
+          "unit": "U/L",
+          "note": "",
+          "critical": false,
+          "by": "lacite",
+          "at": "2026-08-13T13:43:59+00:00",
+          "revision": 1
         }
       },
       "transport": {
@@ -266,11 +276,20 @@
           "detail": {
             "test": "ALT (SGPT)"
           }
+        },
+        {
+          "at": "2026-08-13T13:43:59+00:00",
+          "action": "RESULT_SET",
+          "actor": "lacite",
+          "branch": "LACITE",
+          "detail": {
+            "test": "AST (SGOT)"
+          }
         }
       ],
       "created_at": "2026-08-13T13:40:07+00:00",
       "created_by": "diamond",
-      "updated_at": "2026-08-13T13:42:40+00:00"
+      "updated_at": "2026-08-13T13:43:59+00:00"
     }
   }
 }
