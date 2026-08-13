@@ -357,6 +357,16 @@
           "by": "lacite",
           "at": "2026-08-13T13:49:32+00:00",
           "revision": 1
+        },
+        "LDL": {
+          "value": 100,
+          "components": null,
+          "unit": "mg/dL",
+          "note": "",
+          "critical": false,
+          "by": "lacite",
+          "at": "2026-08-13T13:49:53+00:00",
+          "revision": 1
         }
       },
       "transport": {
@@ -548,11 +558,20 @@
           "detail": {
             "test": "GGT"
           }
+        },
+        {
+          "at": "2026-08-13T13:49:53+00:00",
+          "action": "RESULT_SET",
+          "actor": "lacite",
+          "branch": "LACITE",
+          "detail": {
+            "test": "LDL-Cholesterol"
+          }
         }
       ],
       "created_at": "2026-08-13T13:40:07+00:00",
       "created_by": "diamond",
-      "updated_at": "2026-08-13T13:49:32+00:00"
+      "updated_at": "2026-08-13T13:49:53+00:00"
     }
   }
 }
