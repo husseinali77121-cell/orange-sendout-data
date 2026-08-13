@@ -8,7 +8,7 @@
       "day": "2026-08-13",
       "origin_branch": "DIAMOND",
       "performing_branch": "LACITE",
-      "status": "SENT",
+      "status": "RECEIVED",
       "collected_at": "2026-08-13T13:40:07+00:00",
       "patient": {
         "name": "حسين علي",
@@ -25,7 +25,7 @@
       },
       "notes": {
         "on_request": "",
-        "on_receipt": "",
+        "on_receipt": "حسين",
         "on_result": ""
       },
       "tubes": [
@@ -211,7 +211,14 @@
         "by": "diamond",
         "note": ""
       },
-      "receipt": {},
+      "receipt": {
+        "at": "2026-08-13T13:41:33+00:00",
+        "by": "lacite",
+        "condition": "سليمة",
+        "accepted": true,
+        "hours_in_transit": 0.02,
+        "stability_override": false
+      },
       "critical": [],
       "events": [
         {
@@ -223,11 +230,20 @@
             "mode": "مندوب",
             "courier": "عطيه"
           }
+        },
+        {
+          "at": "2026-08-13T13:41:33+00:00",
+          "action": "→RECEIVED",
+          "actor": "lacite",
+          "branch": "LACITE",
+          "detail": {
+            "condition": "سليمة"
+          }
         }
       ],
       "created_at": "2026-08-13T13:40:07+00:00",
       "created_by": "diamond",
-      "updated_at": "2026-08-13T13:40:28+00:00"
+      "updated_at": "2026-08-13T13:41:33+00:00"
     }
   }
 }
